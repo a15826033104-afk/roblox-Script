@@ -8,13 +8,14 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
--- ===================== 状态控制 =====================
+-- ===================== 状态与配置 =====================
 local State = {
     WalkSpeed = 16, JumpPower = 50, Noclip = false, 
     Fly = false, FlySpeed = 60,
     MaxDistance = 500, ESP_Players = false, ESP_NPCs = false, ESP_Items = false,
     DrawBox = true, DrawLine = true, DrawName = true, DrawHealth = true, DrawDistance = true,
-    AutoDodge = false, DodgeRange = 40, AutoFlyOnDamage = false,
+    AutoDodge = false, DodgeRange = 40, 
+    AutoFlyOnDamage = false,
     CustomItems = {"gold", "copper", "diamond", "scrap"}
 }
 
@@ -22,12 +23,8 @@ local State = {
 local ESPCache = {}
 local DrawingCache = {}
 local CoreGui = game:GetService("CoreGui")
-
--- 清理旧 UI 防止内存泄漏
-if CoreGui:FindFirstChild("Ultimate_ESP") then CoreGui.Ultimate_ESP:Destroy() end
-
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "Ultimate_ESP"
+ScreenGui.Name = "Universal_ESP"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.Parent = CoreGui
@@ -37,11 +34,10 @@ local function getCharacter()
     if not char then return nil end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum or hum.Health <= 0 then return nil end
+    if not hrp or not hum then return nil end
     return char, hrp, hum
 end
 
--- ===================== 视觉检测 =====================
 local function isLoot(part)
     if not part:IsA("BasePart") then return false end
     local n = part.Name:lower()
@@ -53,11 +49,10 @@ end
 
 local function isNPC(obj)
     if not obj:IsA("Model") or Players:GetPlayerFromCharacter(obj) then return false end
-    local hum = obj:FindFirstChildOfClass("Humanoid")
-    return hum ~= nil and hum.Health > 0
+    return obj:FindFirstChildOfClass("Humanoid") ~= nil
 end
 
--- ===================== 渲染引擎 =====================
+-- ===================== 3D 渲染 =====================
 local function create3DESP(target, color)
     if ESPCache[target] then return end
     local hl = Instance.new("Highlight")
@@ -114,6 +109,7 @@ local function remove3DESP(target)
     end
 end
 
+-- ===================== 2D 渲染 (方框/追踪线) =====================
 local function get2DUI(target)
     if not DrawingCache[target] then
         local box = Instance.new("Frame")
@@ -147,15 +143,11 @@ local function get2DUI(target)
     return DrawingCache[target]
 end
 
--- ===================== 主渲染循环 (死后不关 ESP) =====================
+-- ===================== 主渲染循环 =====================
 RunService.RenderStepped:Connect(function()
     local char, hrp = getCharacter()
-    
     if not char or not hrp then
         for _, ui in pairs(DrawingCache) do ui.Box.Visible = false ui.Line.Visible = false end
-        if not State.ESP_Players and not State.ESP_NPCs and not State.ESP_Items then
-            for target, _ in pairs(ESPCache) do remove3DESP(target) end
-        end
         return
     end
 
@@ -223,11 +215,13 @@ RunService.RenderStepped:Connect(function()
     if State.ESP_Players then
         for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then processTarget(p.Character, Color3.fromRGB(0, 255, 0)) end end
     end
+    
     if State.ESP_NPCs then
         for _, obj in ipairs(Workspace:GetChildren()) do
             if obj:IsA("Model") and isNPC(obj) then processTarget(obj, Color3.fromRGB(255, 50, 50)) end
         end
     end
+    
     if State.ESP_Items then
         local params = OverlapParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
@@ -242,51 +236,13 @@ RunService.RenderStepped:Connect(function()
     end
     for target, ui in pairs(DrawingCache) do
         if not activeTargets[target] or not target.Parent then 
-            ui.Box.Visible = false
-            ui.Line.Visible = false
+            if not State.DrawBox and not State.DrawLine then ui.Box:Destroy() ui.Line:Destroy() DrawingCache[target] = nil
+            else ui.Box.Visible = false ui.Line.Visible = false end
         end
     end
 end)
 
--- ===================== 终极平滑飞行 (帧率同步无物理Bug) =====================
-local flyConn = nil
-local function toggleFly(bool)
-    State.Fly = bool
-    if flyConn then flyConn:Disconnect() flyConn = nil end
-    
-    if bool then
-        if not State.Noclip then toggleNoclip(true) end
-        
-        flyConn = RunService.RenderStepped:Connect(function(dt)
-            local char, hrp, hum = getCharacter()
-            if not char or not hrp or not hum then return end
-            
-            if hum:GetState() ~= Enum.HumanoidStateType.Physics then
-                hum:ChangeState(Enum.HumanoidStateType.Physics)
-            end
-            
-            local moveDir = hum.MoveDirection
-            if hum.Jump or UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                moveDir = moveDir + Vector3.new(0, 1, 0)
-            end
-            
-            -- 引入 dt (DeltaTime)，保证在任何帧率下速度绝对均匀，绝不抽搐
-            if moveDir.Magnitude > 0 then
-                hrp.CFrame = hrp.CFrame + (moveDir.Unit * State.FlySpeed * dt)
-            end
-            
-            hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + Camera.CFrame.LookVector)
-        end)
-    else
-        local char, hrp, hum = getCharacter()
-        if char and hum then 
-            -- 退出飞行时恢复自由落体，防止卡在地里
-            hum:ChangeState(Enum.HumanoidStateType.Freefall) 
-        end
-    end
-end
-
--- 穿墙
+-- ===================== 核心功能：穿墙与飞行 =====================
 local noclipConn
 local function toggleNoclip(bool)
     State.Noclip = bool
@@ -301,27 +257,80 @@ local function toggleNoclip(bool)
         end
     else
         if noclipConn then noclipConn:Disconnect() noclipConn = nil end
-        local char = LocalPlayer.Character
-        if char then for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") then v.CanCollide = true end
-        end end
     end
 end
 
--- 重生处理：保持飞行状态与 ESP
-LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(1)
-    local _, hrp, hum = getCharacter()
-    if hum then
-        hum.WalkSpeed = State.WalkSpeed
-        hum.JumpPower = State.JumpPower
-    end
-    if State.Fly then
-        toggleFly(true)
-    end
-end)
+-- 全新物理相机飞行
+local flyBV, flyBG, flyConn
+local function toggleFly(bool)
+    State.Fly = bool
+    local char, hrp, hum = getCharacter()
+    if not char or not hrp then return end
+    
+    if bool then
+        if flyConn then flyConn:Disconnect() end
+        if hrp:FindFirstChild("FlyBV") then hrp.FlyBV:Destroy() end
+        if hrp:FindFirstChild("FlyBG") then hrp.FlyBG:Destroy() end
 
--- 受击自动飞天保命
+        -- 开启飞行时自动开启穿墙防卡
+        toggleNoclip(true)
+
+        flyBV = Instance.new("BodyVelocity")
+        flyBV.Name = "FlyBV"
+        flyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        flyBV.Velocity = Vector3.zero
+        flyBV.Parent = hrp
+        
+        flyBG = Instance.new("BodyGyro")
+        flyBG.Name = "FlyBG"
+        flyBG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        flyBG.P = 10000
+        flyBG.D = 500
+        flyBG.Parent = hrp
+        
+        flyConn = RunService.RenderStepped:Connect(function()
+            if not hrp or not hrp.Parent then return end
+            local cam = Workspace.CurrentCamera
+            
+            -- 强制角色身体跟准星（屏幕中心）对齐，抬头身体就跟着抬头
+            flyBG.CFrame = cam.CFrame
+            
+            local moveDir = hum.MoveDirection
+            
+            -- 判断是否有移动输入（推摇杆或按WASD）
+            if moveDir.Magnitude > 0 then
+                -- 获取相机的朝向和右侧
+                local camLook = cam.CFrame.LookVector
+                local camRight = cam.CFrame.RightVector
+                
+                -- 将你的输入映射到相机空间（如果镜头朝天，往前推就是向上飞）
+                local moveX = moveDir:Dot(camRight)
+                local moveZ = moveDir:Dot(camLook)
+                
+                -- 组合出最终的3D飞行方向
+                local flyDir = (camRight * moveX + camLook * moveZ).Unit
+                flyBV.Velocity = flyDir * State.FlySpeed
+            else
+                -- 如果没有推摇杆，悬停在原地（速度归零）
+                flyBV.Velocity = Vector3.zero
+                
+                -- 手机端专属：如果按着跳跃键，直接垂直起飞
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) or (UserInputService.TouchEnabled and hum.Jump) then
+                    flyBV.Velocity = Vector3.new(0, State.FlySpeed, 0)
+                end
+            end
+        end)
+    else
+        if flyConn then flyConn:Disconnect() end
+        if hrp then
+            if hrp:FindFirstChild("FlyBV") then hrp.FlyBV:Destroy() end
+            if hrp:FindFirstChild("FlyBG") then hrp.FlyBG:Destroy() end
+        end
+        toggleNoclip(false) -- 关飞行时恢复碰撞
+    end
+end
+
+-- ===================== 受击保命与瞬移躲避 =====================
 local function setupDamageFly()
     task.spawn(function()
         while task.wait(1) do
@@ -344,13 +353,12 @@ local function setupDamageFly()
 end
 setupDamageFly()
 
--- 智能瞬移闪避
 local dodgeCooldown = false
 local function runAutoDodge()
     while task.wait(0.1) do
         if not State.AutoDodge or dodgeCooldown then continue end
         local char, hrp, hum = getCharacter()
-        if char and hrp and hum then
+        if char and hrp and hum and hum.Health > 0 then
             local params = OverlapParams.new()
             params.FilterType = Enum.RaycastFilterType.Exclude
             params.FilterDescendantsInstances = {char}
@@ -376,10 +384,10 @@ task.spawn(runAutoDodge)
 
 -- ===================== UI 构建 =====================
 local Window = WindUI:CreateWindow({
-    Title = "终极辅助脚本",
-    Icon = "shield",
+    Title = "致命猿猴 · 终极辅助",
+    Icon = "monkey",
     Author = "Assistant",
-    Folder = "LethalApeHub",
+    Folder = "LethalApeUltimate",
     Size = UDim2.fromOffset(480, 360),
     Theme = "Dark",
     Transparent = true 
@@ -401,24 +409,20 @@ E_Style:Toggle({ Title = "显示 血量条", Value = true, Callback = function(v
 E_Style:Slider({ Title = "最大渲染距离", Value = { Min = 100, Max = 2000, Default = 500 }, Step = 50, Callback = function(v) State.MaxDistance = v end })
 
 -- Tab 2: 保命系统
-local SurvTab = Window:Tab({ Title = "生存与能力", Icon = "shield" })
-local S_Dodge = SurvTab:Section({ Title = "躲避怪物", Opened = true })
+local SurvTab = Window:Tab({ Title = "移动与保命", Icon = "shield" })
+local S_Dodge = SurvTab:Section({ Title = "极限生存 (防猴)", Opened = true })
 S_Dodge:Toggle({ Title = "危险自动瞬移 (无敌闪避)", Value = false, Callback = function(v) State.AutoDodge = v end })
 S_Dodge:Slider({ Title = "触发距离 (米)", Value = { Min = 10, Max = 100, Default = 40 }, Step = 5, Callback = function(v) State.DodgeRange = v end })
 S_Dodge:Toggle({ Title = "受击自动飞天保命", Value = false, Callback = function(v) State.AutoFlyOnDamage = v end })
 
-local S_Player = SurvTab:Section({ Title = "角色强化", Opened = true })
-S_Player:Slider({ Title = "行走速度", Value = { Min = 16, Max = 200, Default = 16 }, Step = 2, Callback = function(v) State.WalkSpeed = v local _,_,h = getCharacter() if h then h.WalkSpeed = v end end })
-S_Player:Slider({ Title = "跳跃高度", Value = { Min = 50, Max = 300, Default = 50 }, Step = 5, Callback = function(v) State.JumpPower = v local _,_,h = getCharacter() if h then h.JumpPower = v end end })
+local S_Player = SurvTab:Section({ Title = "角色能力", Opened = true })
+S_Player:Slider({ Title = "行走速度", Value = { Min = 16, Max = 200, Default = 16 }, Step = 2, Callback = function(v) local _,_,h = getCharacter() if h then h.WalkSpeed = v end end })
+S_Player:Slider({ Title = "跳跃高度", Value = { Min = 50, Max = 300, Default = 50 }, Step = 5, Callback = function(v) local _,_,h = getCharacter() if h then h.JumpPower = v end end })
 S_Player:Toggle({ Title = "穿墙 (Noclip)", Value = false, Callback = toggleNoclip })
+S_Player:Toggle({ Title = "相机视线飞行 (抬头即飞)", Value = false, Callback = toggleFly })
+S_Player:Slider({ Title = "飞行速度", Value = { Min = 20, Max = 200, Default = 60 }, Step = 10, Callback = function(v) State.FlySpeed = v end })
 
--- Tab 3: 飞行
-local MoveTab = Window:Tab({ Title = "飞行控制", Icon = "send" })
-local M_Fly = MoveTab:Section({ Title = "飞行设置", Opened = true })
-M_Fly:Slider({ Title = "飞行速度", Value = { Min = 20, Max = 300, Default = 60 }, Step = 10, Callback = function(v) State.FlySpeed = v end })
-M_Fly:Toggle({ Title = "开启飞行 (按住跳跃上升)", Value = false, Callback = function(v) toggleFly(v) end })
-
--- Tab 4: 设置
+-- Tab 3: 设置
 local SettingsTab = Window:Tab({ Title = "设置", Icon = "settings" })
 SettingsTab:Button({ Title = "重置角色 (卡住时使用)", Callback = function()
     local char = LocalPlayer.Character
