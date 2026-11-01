@@ -1,4 +1,3 @@
--- 加载 Fluent UI (如果卡顿，可以尝试加代理: https://ghproxy.com/https://raw.githubusercontent.com/...)
 local Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Init.lua"))()
 
 local Players = game:GetService("Players")
