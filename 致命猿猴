@@ -1,0 +1,430 @@
+local WindUI = loadstring(game:HttpGet("https://cdn.jsdelivr.net/gh/Footagesus/WindUI@latest/dist/main.lua"))()
+pcall(function() WindUI:SetLanguage("zh-CN") end)
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- ===================== 状态控制 =====================
+local State = {
+    WalkSpeed = 16, JumpPower = 50, Noclip = false, 
+    Fly = false, FlySpeed = 60,
+    MaxDistance = 500, ESP_Players = false, ESP_NPCs = false, ESP_Items = false,
+    DrawBox = true, DrawLine = true, DrawName = true, DrawHealth = true, DrawDistance = true,
+    AutoDodge = false, DodgeRange = 40, AutoFlyOnDamage = false,
+    CustomItems = {"gold", "copper", "diamond", "scrap"}
+}
+
+-- ===================== 缓存与对象池 =====================
+local ESPCache = {}
+local DrawingCache = {}
+local CoreGui = game:GetService("CoreGui")
+
+-- 清理旧 UI 防止内存泄漏
+if CoreGui:FindFirstChild("Ultimate_ESP") then CoreGui.Ultimate_ESP:Destroy() end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Ultimate_ESP"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = CoreGui
+
+local function getCharacter()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum or hum.Health <= 0 then return nil end
+    return char, hrp, hum
+end
+
+-- ===================== 视觉检测 =====================
+local function isLoot(part)
+    if not part:IsA("BasePart") then return false end
+    local n = part.Name:lower()
+    for _, kw in ipairs(State.CustomItems) do
+        if n:find(kw, 1, true) then return true end
+    end
+    return false
+end
+
+local function isNPC(obj)
+    if not obj:IsA("Model") or Players:GetPlayerFromCharacter(obj) then return false end
+    local hum = obj:FindFirstChildOfClass("Humanoid")
+    return hum ~= nil and hum.Health > 0
+end
+
+-- ===================== 渲染引擎 =====================
+local function create3DESP(target, color)
+    if ESPCache[target] then return end
+    local hl = Instance.new("Highlight")
+    hl.Name = "ESP_HL"
+    hl.Adornee = target
+    hl.FillColor = color
+    hl.FillTransparency = 0.5
+    hl.OutlineColor = Color3.new(1, 1, 1)
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Parent = target
+
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "ESP_BB"
+    bb.Adornee = target
+    bb.Size = UDim2.new(0, 200, 0, 60)
+    bb.StudsOffset = Vector3.new(0, 3, 0)
+    bb.AlwaysOnTop = true
+    bb.MaxDistance = State.MaxDistance
+
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Name = "NameLabel"
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Size = UDim2.new(1, 0, 0.4, 0)
+    nameLabel.Font = Enum.Font.SourceSansBold
+    nameLabel.TextSize = 16
+    nameLabel.TextStrokeTransparency = 0
+    nameLabel.TextColor3 = color
+    nameLabel.Parent = bb
+
+    local hpBack = Instance.new("Frame")
+    hpBack.Name = "HPBack"
+    hpBack.Size = UDim2.new(0.8, 0, 0.1, 0)
+    hpBack.Position = UDim2.new(0.1, 0, 0.5, 0)
+    hpBack.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    hpBack.BorderSizePixel = 0
+    hpBack.Parent = bb
+
+    local hpBar = Instance.new("Frame")
+    hpBar.Name = "HPBar"
+    hpBar.Size = UDim2.new(1, 0, 1, 0)
+    hpBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    hpBar.BorderSizePixel = 0
+    hpBar.Parent = hpBack
+
+    bb.Parent = target
+    ESPCache[target] = { HL = hl, BB = bb, Name = nameLabel, HPBack = hpBack, HPBar = hpBar }
+end
+
+local function remove3DESP(target)
+    if ESPCache[target] then
+        if ESPCache[target].HL then ESPCache[target].HL:Destroy() end
+        if ESPCache[target].BB then ESPCache[target].BB:Destroy() end
+        ESPCache[target] = nil
+    end
+end
+
+local function get2DUI(target)
+    if not DrawingCache[target] then
+        local box = Instance.new("Frame")
+        box.Name = "ESP_Box"
+        box.BackgroundTransparency = 1
+        box.BorderSizePixel = 0
+        box.Visible = false
+        
+        for _, dir in ipairs({"Top", "Bottom", "Left", "Right"}) do
+            local edge = Instance.new("Frame")
+            edge.Name = dir
+            edge.BackgroundColor3 = Color3.new(1, 1, 1)
+            edge.BorderSizePixel = 0
+            edge.Parent = box
+            if dir == "Top" then edge.Size = UDim2.new(1,0,0,1) edge.Position = UDim2.new(0,0,0,0)
+            elseif dir == "Bottom" then edge.Size = UDim2.new(1,0,0,1) edge.Position = UDim2.new(0,0,1,0)
+            elseif dir == "Left" then edge.Size = UDim2.new(0,1,1,0) edge.Position = UDim2.new(0,0,0,0)
+            elseif dir == "Right" then edge.Size = UDim2.new(0,1,1,0) edge.Position = UDim2.new(1,0,0,0) end
+        end
+        
+        local line = Instance.new("Frame")
+        line.Name = "ESP_Line"
+        line.BackgroundColor3 = Color3.new(1, 1, 1)
+        line.BorderSizePixel = 0
+        line.Visible = false
+        
+        box.Parent = ScreenGui
+        line.Parent = ScreenGui
+        DrawingCache[target] = { Box = box, Line = line }
+    end
+    return DrawingCache[target]
+end
+
+-- ===================== 主渲染循环 (死后不关 ESP) =====================
+RunService.RenderStepped:Connect(function()
+    local char, hrp = getCharacter()
+    
+    if not char or not hrp then
+        for _, ui in pairs(DrawingCache) do ui.Box.Visible = false ui.Line.Visible = false end
+        if not State.ESP_Players and not State.ESP_NPCs and not State.ESP_Items then
+            for target, _ in pairs(ESPCache) do remove3DESP(target) end
+        end
+        return
+    end
+
+    local activeTargets = {}
+    local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+
+    local function processTarget(target, color)
+        if not target or not target.Parent then return end
+        local rootPart = target:IsA("Model") and target:FindFirstChild("HumanoidRootPart") or target
+        if not rootPart then return end
+        
+        local dist = (rootPart.Position - hrp.Position).Magnitude
+        if dist > State.MaxDistance or target == char then return end
+        activeTargets[target] = true
+
+        create3DESP(target, color)
+        local data = ESPCache[target]
+        if data then
+            data.Name.Text = State.DrawName and (target.Name .. (State.DrawDistance and string.format(" [%dm]", math.floor(dist)) or "")) or ""
+            local hum = target:IsA("Model") and target:FindFirstChildOfClass("Humanoid")
+            if hum and State.DrawHealth then
+                data.HPBack.Visible = true
+                local hpPct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                data.HPBar.Size = UDim2.new(hpPct, 0, 1, 0)
+                data.HPBar.BackgroundColor3 = Color3.fromRGB(255 - (hpPct * 255), hpPct * 255, 0)
+            else
+                data.HPBack.Visible = false
+            end
+        end
+
+        if State.DrawBox or State.DrawLine then
+            local ui = get2DUI(target)
+            ui.Box.BorderColor3 = color
+            ui.Line.BackgroundColor3 = color
+            local vpPos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
+            
+            if onScreen then
+                local headPos = Camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 2.5, 0))
+                local legPos = Camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 2.5, 0))
+                local height = math.abs(headPos.Y - legPos.Y)
+                local width = height * 0.6
+                
+                if State.DrawBox then
+                    ui.Box.Visible = true
+                    ui.Box.Position = UDim2.new(0, vpPos.X - width/2, 0, headPos.Y)
+                    ui.Box.Size = UDim2.new(0, width, 0, height)
+                    for _, edge in pairs(ui.Box:GetChildren()) do if edge:IsA("Frame") then edge.BackgroundColor3 = color end end
+                else ui.Box.Visible = false end
+                
+                if State.DrawLine then
+                    ui.Line.Visible = true
+                    local lineLength = (screenCenter - Vector2.new(vpPos.X, vpPos.Y)).Magnitude
+                    local lineAngle = math.deg(math.atan2(vpPos.Y - screenCenter.Y, vpPos.X - screenCenter.X)) + 90
+                    ui.Line.Position = screenCenter
+                    ui.Line.Size = UDim2.new(0, 1, 0, lineLength)
+                    ui.Line.Rotation = lineAngle
+                else ui.Line.Visible = false end
+            else
+                ui.Box.Visible = false
+                ui.Line.Visible = false
+            end
+        end
+    end
+
+    if State.ESP_Players then
+        for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then processTarget(p.Character, Color3.fromRGB(0, 255, 0)) end end
+    end
+    if State.ESP_NPCs then
+        for _, obj in ipairs(Workspace:GetChildren()) do
+            if obj:IsA("Model") and isNPC(obj) then processTarget(obj, Color3.fromRGB(255, 50, 50)) end
+        end
+    end
+    if State.ESP_Items then
+        local params = OverlapParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = {char}
+        for _, part in ipairs(Workspace:GetPartBoundsInRadius(hrp.Position, State.MaxDistance, params)) do
+            if isLoot(part) then processTarget(part, Color3.fromRGB(255, 215, 0)) end
+        end
+    end
+
+    for target, _ in pairs(ESPCache) do
+        if not activeTargets[target] or not target.Parent then remove3DESP(target) end
+    end
+    for target, ui in pairs(DrawingCache) do
+        if not activeTargets[target] or not target.Parent then 
+            ui.Box.Visible = false
+            ui.Line.Visible = false
+        end
+    end
+end)
+
+-- ===================== 终极平滑飞行 (帧率同步无物理Bug) =====================
+local flyConn = nil
+local function toggleFly(bool)
+    State.Fly = bool
+    if flyConn then flyConn:Disconnect() flyConn = nil end
+    
+    if bool then
+        if not State.Noclip then toggleNoclip(true) end
+        
+        flyConn = RunService.RenderStepped:Connect(function(dt)
+            local char, hrp, hum = getCharacter()
+            if not char or not hrp or not hum then return end
+            
+            if hum:GetState() ~= Enum.HumanoidStateType.Physics then
+                hum:ChangeState(Enum.HumanoidStateType.Physics)
+            end
+            
+            local moveDir = hum.MoveDirection
+            if hum.Jump or UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                moveDir = moveDir + Vector3.new(0, 1, 0)
+            end
+            
+            -- 引入 dt (DeltaTime)，保证在任何帧率下速度绝对均匀，绝不抽搐
+            if moveDir.Magnitude > 0 then
+                hrp.CFrame = hrp.CFrame + (moveDir.Unit * State.FlySpeed * dt)
+            end
+            
+            hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + Camera.CFrame.LookVector)
+        end)
+    else
+        local char, hrp, hum = getCharacter()
+        if char and hum then 
+            -- 退出飞行时恢复自由落体，防止卡在地里
+            hum:ChangeState(Enum.HumanoidStateType.Freefall) 
+        end
+    end
+end
+
+-- 穿墙
+local noclipConn
+local function toggleNoclip(bool)
+    State.Noclip = bool
+    if bool then
+        if not noclipConn then
+            noclipConn = RunService.Stepped:Connect(function()
+                local char = LocalPlayer.Character
+                if char then for _, v in pairs(char:GetDescendants()) do
+                    if v:IsA("BasePart") and v.CanCollide then v.CanCollide = false end
+                end end
+            end)
+        end
+    else
+        if noclipConn then noclipConn:Disconnect() noclipConn = nil end
+        local char = LocalPlayer.Character
+        if char then for _, v in pairs(char:GetDescendants()) do
+            if v:IsA("BasePart") then v.CanCollide = true end
+        end end
+    end
+end
+
+-- 重生处理：保持飞行状态与 ESP
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)
+    local _, hrp, hum = getCharacter()
+    if hum then
+        hum.WalkSpeed = State.WalkSpeed
+        hum.JumpPower = State.JumpPower
+    end
+    if State.Fly then
+        toggleFly(true)
+    end
+end)
+
+-- 受击自动飞天保命
+local function setupDamageFly()
+    task.spawn(function()
+        while task.wait(1) do
+            local char, hrp, hum = getCharacter()
+            if char and hum then
+                if not hum:GetAttribute("FlyHooked") then
+                    hum:SetAttribute("FlyHooked", true)
+                    hum.HealthChanged:Connect(function(newHp)
+                        if State.AutoFlyOnDamage and newHp < hum.MaxHealth and newHp > 0 then
+                            if not State.Fly then
+                                toggleFly(true)
+                                WindUI:Notify({ Title = "危险", Content = "检测到受伤，已自动升空！", Duration = 3 })
+                            end
+                        end
+                    end)
+                end
+            end
+        end
+    end)
+end
+setupDamageFly()
+
+-- 智能瞬移闪避
+local dodgeCooldown = false
+local function runAutoDodge()
+    while task.wait(0.1) do
+        if not State.AutoDodge or dodgeCooldown then continue end
+        local char, hrp, hum = getCharacter()
+        if char and hrp and hum then
+            local params = OverlapParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances = {char}
+            local parts = Workspace:GetPartBoundsInRadius(hrp.Position, State.DodgeRange, params)
+            
+            for _, part in ipairs(parts) do
+                local model = part:FindFirstAncestorOfClass("Model")
+                if model and isNPC(model) then
+                    dodgeCooldown = true
+                    local awayDir = (hrp.Position - part.Position).Unit
+                    local safePos = hrp.Position + (awayDir * 25) + Vector3.new(0, 5, 0)
+                    hrp.CFrame = CFrame.new(safePos, safePos + awayDir)
+                    WindUI:Notify({ Title = "保命", Content = "已触发瞬移躲避！", Duration = 2 })
+                    task.wait(2)
+                    dodgeCooldown = false
+                    break
+                end
+            end
+        end
+    end
+end
+task.spawn(runAutoDodge)
+
+-- ===================== UI 构建 =====================
+local Window = WindUI:CreateWindow({
+    Title = "终极辅助脚本",
+    Icon = "shield",
+    Author = "Assistant",
+    Folder = "LethalApeHub",
+    Size = UDim2.fromOffset(480, 360),
+    Theme = "Dark",
+    Transparent = true 
+})
+
+-- Tab 1: 视觉透视
+local EspTab = Window:Tab({ Title = "视觉透视", Icon = "eye" })
+local E_Target = EspTab:Section({ Title = "透视目标", Opened = true })
+E_Target:Toggle({ Title = "玩家透视 (绿色)", Value = false, Callback = function(v) State.ESP_Players = v end })
+E_Target:Toggle({ Title = "怪物透视 (红色)", Value = false, Callback = function(v) State.ESP_NPCs = v end })
+E_Target:Toggle({ Title = "物品透视 (金色)", Value = false, Callback = function(v) State.ESP_Items = v end })
+
+local E_Style = EspTab:Section({ Title = "视觉样式", Opened = true })
+E_Style:Toggle({ Title = "绘制 2D 方框", Value = true, Callback = function(v) State.DrawBox = v end })
+E_Style:Toggle({ Title = "绘制 屏幕追踪线", Value = true, Callback = function(v) State.DrawLine = v end })
+E_Style:Toggle({ Title = "显示 名字", Value = true, Callback = function(v) State.DrawName = v end })
+E_Style:Toggle({ Title = "显示 距离", Value = true, Callback = function(v) State.DrawDistance = v end })
+E_Style:Toggle({ Title = "显示 血量条", Value = true, Callback = function(v) State.DrawHealth = v end })
+E_Style:Slider({ Title = "最大渲染距离", Value = { Min = 100, Max = 2000, Default = 500 }, Step = 50, Callback = function(v) State.MaxDistance = v end })
+
+-- Tab 2: 保命系统
+local SurvTab = Window:Tab({ Title = "生存与能力", Icon = "shield" })
+local S_Dodge = SurvTab:Section({ Title = "躲避怪物", Opened = true })
+S_Dodge:Toggle({ Title = "危险自动瞬移 (无敌闪避)", Value = false, Callback = function(v) State.AutoDodge = v end })
+S_Dodge:Slider({ Title = "触发距离 (米)", Value = { Min = 10, Max = 100, Default = 40 }, Step = 5, Callback = function(v) State.DodgeRange = v end })
+S_Dodge:Toggle({ Title = "受击自动飞天保命", Value = false, Callback = function(v) State.AutoFlyOnDamage = v end })
+
+local S_Player = SurvTab:Section({ Title = "角色强化", Opened = true })
+S_Player:Slider({ Title = "行走速度", Value = { Min = 16, Max = 200, Default = 16 }, Step = 2, Callback = function(v) State.WalkSpeed = v local _,_,h = getCharacter() if h then h.WalkSpeed = v end end })
+S_Player:Slider({ Title = "跳跃高度", Value = { Min = 50, Max = 300, Default = 50 }, Step = 5, Callback = function(v) State.JumpPower = v local _,_,h = getCharacter() if h then h.JumpPower = v end end })
+S_Player:Toggle({ Title = "穿墙 (Noclip)", Value = false, Callback = toggleNoclip })
+
+-- Tab 3: 飞行
+local MoveTab = Window:Tab({ Title = "飞行控制", Icon = "send" })
+local M_Fly = MoveTab:Section({ Title = "飞行设置", Opened = true })
+M_Fly:Slider({ Title = "飞行速度", Value = { Min = 20, Max = 300, Default = 60 }, Step = 10, Callback = function(v) State.FlySpeed = v end })
+M_Fly:Toggle({ Title = "开启飞行 (按住跳跃上升)", Value = false, Callback = function(v) toggleFly(v) end })
+
+-- Tab 4: 设置
+local SettingsTab = Window:Tab({ Title = "设置", Icon = "settings" })
+SettingsTab:Button({ Title = "重置角色 (卡住时使用)", Callback = function()
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then char.Humanoid.Health = 0 end
+end })
+SettingsTab:Button({ Title = "关闭 UI", Callback = function() 
+    ScreenGui:Destroy()
+    WindUI:Destroy() 
+end })
