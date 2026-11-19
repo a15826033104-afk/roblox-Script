@@ -1,0 +1,729 @@
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/BK-PE-SCRIPT/refs/heads/main/UI.txt"))()
+local LPlr = game:GetService("Players").LocalPlayer
+local Players = game:GetService("Players")
+local RS, UIS, Light = game:GetService("RunService"), game:GetService("UserInputService"), game:GetService("Lighting")
+local Cam = workspace.CurrentCamera
+local initSpeed = 16
+local bodyConnection = nil
+
+-- ★ 修复：统一使用有效的 Image 资源 ID（原 77348087165494 是 Decal，无法用于 ImageLabel）
+local TAB_ICON = "rbxassetid://4483345998"
+
+if LPlr.Character and LPlr.Character:FindFirstChild("Humanoid") then
+	initSpeed = LPlr.Character.Humanoid.WalkSpeed
+end
+
+local Config = {
+	Speed = initSpeed,
+	FOV = Cam.FieldOfView,
+	SpeedEn = false,
+	FOVEn = false,
+	InfJump = false,
+	Noclip = false,
+	FreezeSelf = false,
+	AnchorOnly = false,
+	NightVis = false,
+	SCPHighlight = false,
+	InfStamina = false,
+	ThirdPerson = false,
+	MonkeyESP = false,
+	AutoGold = false,
+	EarGameESP = false,
+	ScrapESP = false,
+	CardESP = false,
+	AutoEarMoney = false,
+	RecyclerESP = false,
+	PlayerESP = false,
+	ShowNames = false,
+	ShowTracers = false,
+	PlayerHighlight = false,
+	AutoAimBloodMan = false,
+	InstantInteract = false,
+	CreatorESP = true,
+	HideBodies = false,
+}
+local Orig = {
+	FOV = Cam.FieldOfView,
+	Bright = Light.Brightness,
+	Ambient = Light.Ambient,
+	Clock = Light.ClockTime,
+	Speed = initSpeed,
+}
+
+local creatorInGame = false
+
+local function sendNotification(content, time)
+	OrionLib:MakeNotification({
+		Name = "BKU HUB",
+		Content = content,
+		Time = time or 5
+	})
+end
+
+local antiSlipperyEnabled = false
+local antiSlipperyConnection = nil
+
+local function antiSlippery()
+	local char = LPlr.Character
+	if not char then return end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	local rootPart = char:FindFirstChild("HumanoidRootPart")
+	if not humanoid or not rootPart or humanoid.Health <= 0 then return end
+	local currentVel = rootPart.AssemblyLinearVelocity
+	local moveDir = humanoid.MoveDirection
+	local walkSpeed = humanoid.WalkSpeed
+	if walkSpeed <= 0 or walkSpeed > 200 then return end
+	if moveDir.Magnitude < 0.05 then
+		if math.abs(currentVel.X) > 0.01 or math.abs(currentVel.Z) > 0.01 then
+			rootPart.AssemblyLinearVelocity = Vector3.new(0, currentVel.Y, 0)
+		end
+	else
+		local targetHorizontal = moveDir.Unit * walkSpeed
+		rootPart.AssemblyLinearVelocity = Vector3.new(targetHorizontal.X, currentVel.Y, targetHorizontal.Z)
+	end
+end
+
+local function enableAntiSlippery()
+	if antiSlipperyEnabled then return end
+	if not LPlr.Character or not LPlr.Character:FindFirstChild("HumanoidRootPart") then task.wait(0.5) end
+	antiSlipperyConnection = RS.Heartbeat:Connect(antiSlippery)
+	antiSlipperyEnabled = true
+end
+
+local function disableAntiSlippery()
+	if not antiSlipperyEnabled then return end
+	if antiSlipperyConnection then
+		antiSlipperyConnection:Disconnect()
+		antiSlipperyConnection = nil
+	end
+	antiSlipperyEnabled = false
+end
+
+LPlr.CharacterAdded:Connect(function(char)
+	task.wait(0.5)
+	if antiSlipperyEnabled then
+		if antiSlipperyConnection then antiSlipperyConnection:Disconnect() antiSlipperyConnection = nil end
+		local humanoid = char:FindFirstChildOfClass("Humanoid")
+		local rootPart = char:FindFirstChild("HumanoidRootPart")
+		if humanoid and rootPart then antiSlipperyConnection = RS.Heartbeat:Connect(antiSlippery) end
+	end
+end)
+
+local cachedHumanoidModels = {}
+task.spawn(function()
+	while true do
+		table.clear(cachedHumanoidModels)
+		for _, desc in pairs(workspace:GetDescendants()) do
+			if desc:IsA("Model") and desc:FindFirstChildOfClass("Humanoid") then
+				table.insert(cachedHumanoidModels, desc)
+			end
+		end
+		task.wait(1)
+	end
+end)
+
+local cachedBloodMan = nil
+task.spawn(function()
+	while true do
+		cachedBloodMan = nil
+		for _, model in ipairs(cachedHumanoidModels) do
+			if model.Name == "BloodMan" then cachedBloodMan = model break end
+		end
+		task.wait(0.5)
+	end
+end)
+
+local function UpdatePrompts(state)
+	Config.InstantInteract = state
+	for _, v in pairs(game:GetDescendants()) do
+		if v:IsA("ProximityPrompt") then v.HoldDuration = state and 0 or 0.5 end
+	end
+end
+
+game.DescendantAdded:Connect(function(v)
+	if Config.InstantInteract and v:IsA("ProximityPrompt") then v.HoldDuration = 0 end
+end)
+
+local fovConnection = nil
+local function LockFOV()
+	if fovConnection then fovConnection:Disconnect() end
+	if Cam then
+		fovConnection = Cam:GetPropertyChangedSignal("FieldOfView"):Connect(function()
+			if Config.FOVEn and Cam.FieldOfView ~= Config.FOV then Cam.FieldOfView = Config.FOV end
+		end)
+	end
+end
+
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+	Cam = workspace.CurrentCamera
+	LockFOV()
+	if Config.FOVEn and Cam then Cam.FieldOfView = Config.FOV end
+end)
+LockFOV()
+
+local Window = OrionLib:MakeWindow({
+	Name = "BKU HUB BY BALOKSXIN",
+	HidePremium = true,
+	SaveConfig = false,
+	IntroText = "BKU HUB",
+})
+OrionLib:MakeNotification({ Name = "BKU HUB", Content = "辛巴爸爸卢比呀", Time = 3 })
+
+local ESPObjects = {}
+local ActiveCards = {}
+local originalNoclipCollisions = {}
+local CreatorESPObjects = {}
+local cachedAnimationSpeeds = {}
+
+local function setCharacterAnimationFrozen(char, frozen)
+	if not char then return end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+		if animator then
+			if frozen then
+				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+					cachedAnimationSpeeds[track] = track.Speed
+					track:AdjustSpeed(0)
+				end
+			else
+				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+					if cachedAnimationSpeeds[track] then track:AdjustSpeed(cachedAnimationSpeeds[track]) else track:AdjustSpeed(1) end
+				end
+				table.clear(cachedAnimationSpeeds)
+				humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+			end
+		end
+	end
+end
+
+local function removeCreatorESP(player)
+	if player and player.Character then
+		local esp = player.Character:FindFirstChild("CreatorESP")
+		if esp then esp:Destroy() end
+		local highlight = player.Character:FindFirstChild("CreatorHighlight")
+		if highlight then highlight:Destroy() end
+	end
+	if CreatorESPObjects[player] then CreatorESPObjects[player] = nil end
+end
+
+local function createCreatorESP(player)
+	if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+	if CreatorESPObjects[player] and CreatorESPObjects[player].ESP.Parent then return end
+	removeCreatorESP(player)
+	local esp = Instance.new("BillboardGui")
+	esp.Name, esp.Size, esp.StudsOffset, esp.AlwaysOnTop, esp.MaxDistance = "CreatorESP", UDim2.new(0, 200, 0, 50), Vector3.new(0, 3, 0), true, 500
+	local label = Instance.new("TextLabel")
+	label.Name, label.Size, label.BackgroundTransparency, label.Text, label.TextColor3, label.TextScaled, label.TextSize, label.Font, label.Parent = "CreatorESPText", UDim2.new(1, 0, 1, 0), 1, "BKU创建者", Color3.new(0, 0.5, 1), false, 14, Enum.Font.GothamBold, esp
+	esp.Parent = player.Character.HumanoidRootPart
+	local highlight = Instance.new("Highlight")
+	highlight.Name, highlight.FillColor, highlight.FillTransparency, highlight.OutlineColor, highlight.OutlineTransparency, highlight.Parent = "CreatorHighlight", Color3.new(0, 0.5, 1), 1, Color3.new(0, 0.5, 1), 0, player.Character
+	CreatorESPObjects[player] = { ESP = esp, Highlight = highlight }
+end
+
+local function findAndMarkCreator()
+	local foundCreator = false
+	for _, player in pairs(Players:GetPlayers()) do
+		if player.Name:lower() == "baloksxin_real" then
+			foundCreator = true
+			if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+				if not CreatorESPObjects[player] or not player.Character:FindFirstChild("CreatorESP") then
+					createCreatorESP(player)
+					if not creatorInGame then
+						sendNotification("BKU创建者已进入此服务器", 6)
+						creatorInGame = true
+					end
+				end
+			end
+		else
+			if CreatorESPObjects[player] then removeCreatorESP(player) end
+		end
+	end
+	if not foundCreator and creatorInGame then creatorInGame = false end
+end
+
+LPlr.CharacterAdded:Connect(function()
+	table.clear(originalNoclipCollisions)
+	table.clear(cachedAnimationSpeeds)
+end)
+
+local function CreateESP(player)
+	local drawObj = { Line = Drawing.new("Line"), Text = Drawing.new("Text") }
+	drawObj.Line.Thickness, drawObj.Line.Transparency, drawObj.Text.Size, drawObj.Text.Center, drawObj.Text.Outline = 1, 1, 13, true, true
+	return drawObj
+end
+
+RS.RenderStepped:Connect(function()
+	if not Config.PlayerESP then return end
+	for _, player in pairs(Players:GetPlayers()) do
+		if player == LPlr or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+			if ESPObjects[player] then ESPObjects[player].Line.Visible = false ESPObjects[player].Text.Visible = false end
+			continue
+		end
+		if not ESPObjects[player] then ESPObjects[player] = CreateESP(player) end
+		local obj, hrp = ESPObjects[player], player.Character.HumanoidRootPart
+		local screenPos, onScreen = Cam:WorldToViewportPoint(hrp.Position)
+		local teamColor = (player.Team and player.TeamColor.Color) or Color3.fromRGB(0, 255, 0)
+		if Config.PlayerHighlight then
+			if not player.Character:FindFirstChild("PlayerHighlight") then
+				local hl = Instance.new("Highlight")
+				hl.Name, hl.FillColor, hl.OutlineColor, hl.Parent = "PlayerHighlight", (player.Team and player.TeamColor.Color) or Color3.fromRGB(0, 255, 0), Color3.fromRGB(255, 255, 255), player.Character
+				local function onTeamChanged() if hl and hl.Parent then hl.FillColor = (player.Team and player.TeamColor.Color) or Color3.fromRGB(0, 255, 0) end end
+				player:GetPropertyChangedSignal("Team"):Connect(onTeamChanged)
+			end
+		else
+			if player.Character:FindFirstChild("PlayerHighlight") then player.Character.PlayerHighlight:Destroy() end
+		end
+		if onScreen then
+			if Config.ShowTracers then obj.Line.From, obj.Line.To, obj.Line.Color, obj.Line.Visible = Vector2.new(Cam.ViewportSize.X / 2, Cam.ViewportSize.Y), Vector2.new(screenPos.X, screenPos.Y), teamColor, true else obj.Line.Visible = false end
+			if Config.ShowNames then
+				local head = player.Character:FindFirstChild("Head")
+				local textTarget = head and (head.Position + Vector3.new(0, 0.8, 0)) or (hrp.Position + Vector3.new(0, 3, 0))
+				local textPos, textOnScreen = Cam:WorldToViewportPoint(textTarget)
+				if textOnScreen then obj.Text.Position = Vector2.new(textPos.X, textPos.Y) else obj.Text.Position = Vector2.new(screenPos.X, screenPos.Y - 20) end
+				obj.Text.Text, obj.Text.Color, obj.Text.Visible = player.DisplayName, teamColor, true
+			else obj.Text.Visible = false end
+		else obj.Line.Visible, obj.Text.Visible = false, false end
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	if ESPObjects[player] then ESPObjects[player].Line:Remove() ESPObjects[player].Text:Remove() ESPObjects[player] = nil end
+	if player.Name:lower() == "baloksxin_real" then removeCreatorESP(player) creatorInGame = false sendNotification("BKU创建者已退出游戏", 5) end
+end)
+
+Players.PlayerAdded:Connect(function(player)
+	if player.Name:lower() == "baloksxin_real" then
+		sendNotification("BKU创建者已进入此服务器", 6)
+		creatorInGame = true
+		player.CharacterAdded:Connect(function(character) task.wait(0.5) removeCreatorESP(player) createCreatorESP(player) end)
+		if player.Character then task.wait(1) createCreatorESP(player) end
+	end
+end)
+
+local t1 = Window:MakeTab({ Name = "信息", Icon = TAB_ICON })
+t1:AddSection({ Name = "信息" })
+t1:AddLabel("使用者: " .. LPlr.DisplayName)
+t1:AddLabel("执行器: " .. ((identifyexecutor and identifyexecutor()) or "未知"))
+t1:AddLabel("游戏 ID (PlaceId): " .. tostring(game.PlaceId))
+t1:AddLabel("服务器 ID (JobId): " .. (game.JobId ~= "" and game.JobId or "单人/私服"))
+t1:AddButton({ Name = "点击复制服务器 ID", Callback = function() setclipboard(game.JobId) end })
+t1:AddButton({ Name = "复制作者KS ID", Callback = function() setclipboard("Baloksxin") end })
+t1:AddSection({ Name = "更新日志" })
+t1:AddLabel("致命猴子 ＆ Ear Game通用")
+t1:AddLabel("+ 添加隐藏尸体")
+t1:AddLabel("最后更新时间:2026/8/2")
+
+local tESP = Window:MakeTab({ Name = "玩家 ESP", Icon = TAB_ICON })
+tESP:AddToggle({ Name = "开启 ESP", Callback = function(v) Config.PlayerESP = v if not v then for _, obj in pairs(ESPObjects) do obj.Line.Visible = false obj.Text.Visible = false end for _, p in pairs(Players:GetPlayers()) do if p.Character and p.Character:FindFirstChild("PlayerHighlight") then p.Character.PlayerHighlight:Destroy() end end end end })
+tESP:AddToggle({ Name = "显示名字", Callback = function(v) Config.ShowNames = v end })
+tESP:AddToggle({ Name = "显示射线", Callback = function(v) Config.ShowTracers = v end })
+tESP:AddToggle({ Name = "显示高亮", Callback = function(v) Config.PlayerHighlight = v end })
+
+local t2 = Window:MakeTab({ Name = "通用", Icon = TAB_ICON })
+t2:AddSection({ Name = "角色属性修改" })
+t2:AddSlider({ Name = "修改速度值", Min = 0, Max = 500, Default = Orig.Speed, Increment = 1, ValueName = "", Callback = function(v) Config.Speed = v if Config.SpeedEn and LPlr.Character and LPlr.Character:FindFirstChild("Humanoid") then LPlr.Character.Humanoid.WalkSpeed = v end end })
+t2:AddToggle({ Name = "开启速度修改", Callback = function(v) Config.SpeedEn = v if not v and LPlr.Character:FindFirstChild("Humanoid") then LPlr.Character.Humanoid.WalkSpeed = Orig.Speed elseif v and LPlr.Character and LPlr.Character:FindFirstChild("Humanoid") then LPlr.Character.Humanoid.WalkSpeed = Config.Speed end end })
+t2:AddSlider({ Name = "修改FOV值", Min = 1, Max = 120, Default = Orig.FOV, Increment = 1, ValueName = "", Callback = function(v) Config.FOV = v if Config.FOVEn and Cam then Cam.FieldOfView = v end end })
+t2:AddToggle({ Name = "开启 FOV 修改", Callback = function(v) Config.FOVEn = v if not v then Cam.FieldOfView = Orig.FOV else Cam.FieldOfView = Config.FOV end end })
+t2:AddToggle({ Name = "第三人称", Callback = function(v) Config.ThirdPerson = v end })
+t2:AddToggle({ Name = "无限跳跃", Callback = function(v) Config.InfJump = v end })
+t2:AddButton({ Name = "汉化游戏", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/AUTOTL.LUA"))() end })
+t2:AddToggle({ Name = "穿墙模式 (Noclip)", Callback = function(v) Config.Noclip = v if not v then for part, originalState in pairs(originalNoclipCollisions) do if part and part.Parent then part.CanCollide = originalState end end table.clear(originalNoclipCollisions) end end })
+t2:AddToggle({ Name = "固定自己", Callback = function(v) Config.FreezeSelf = v if LPlr.Character then local hrp = LPlr.Character:FindFirstChild("HumanoidRootPart") if hrp then hrp.Anchored = v end setCharacterAnimationFrozen(LPlr.Character, v) end end })
+t2:AddToggle({ Name = "固定自己(不固定动画)", Callback = function(v) Config.AnchorOnly = v if LPlr.Character then local hrp = LPlr.Character:FindFirstChild("HumanoidRootPart") if hrp then hrp.Anchored = v end end end })
+t2:AddToggle({ Name = "夜视模式", Callback = function(v) Config.NightVis = v if not v then Light.Brightness, Light.Ambient, Light.ClockTime = Orig.Bright, Orig.Ambient, Orig.Clock end end })
+t2:AddToggle({ Name = "立即互动", Callback = function(v) UpdatePrompts(v) end })
+t2:AddSection({ Name = "工具" })
+t2:AddButton({ Name = "AnimHubV2", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Emerson2-creator/Scripts-Roblox/refs/heads/main/ScriptR6/AnimGuiV2.lua"))() end })
+t2:AddButton({ Name = "声音修改工具", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/%E5%A3%B0%E9%9F%B3%E4%BF%AE%E6%94%B9.LUA"))() end })
+t2:AddButton({ Name = "手机版Shiftlock", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/MobileShiftlock.LUA"))() end })
+t2:AddButton({ Name = "Infinite Yield", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))() end })
+t2:AddButton({ Name = "TP Tool", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/TP%20TOOL.LUA"))() end })
+t2:AddButton({ Name = "飞行 GUI", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/Fly%20Gui.LUA"))() end })
+t2:AddButton({ Name = "R15动作脚本", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Gazer-Ha/Free-emote/refs/heads/main/Delta%20mad%20stuffs"))() end })
+t2:AddSection({ Name = "开启跳跃" })
+local defaultJumpPower = 15
+local jumpHeightValue = defaultJumpPower
+t2:AddTextbox({ Name = "跳跃高度", Default = "15", TextDisappear = false, Callback = function(v) jumpHeightValue = tonumber(v) or defaultJumpPower end })
+t2:AddButton({ Name = "开启跳跃按钮(覆盖游戏原有)", Callback = function() local jumph = jumpHeightValue loadstring([[local jumph = ]] .. tostring(jumph) .. [[ ]] .. game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/JB.LUA"))() end })
+
+local tRotation = Window:MakeTab({ Name = "旋转", Icon = TAB_ICON })
+local RotationConfig = { Enabled = false, Speed = 1, Direction = 1 }
+local rotationConnection = nil
+
+local function startRotation()
+	if rotationConnection then rotationConnection:Disconnect() rotationConnection = nil end
+	if not RotationConfig.Enabled then
+		if LPlr.Character then local humanoid = LPlr.Character:FindFirstChildOfClass("Humanoid") if humanoid then humanoid.AutoRotate = true end end
+		return
+	end
+	if LPlr.Character then local humanoid = LPlr.Character:FindFirstChildOfClass("Humanoid") if humanoid then humanoid.AutoRotate = false end end
+	rotationConnection = RS.RenderStepped:Connect(function()
+		if not RotationConfig.Enabled then return end
+		local char = LPlr.Character if not char then return end local hrp = char:FindFirstChild("HumanoidRootPart") if not hrp then return end
+		if Config.AutoAimBloodMan then
+			local bloodMan = cachedBloodMan
+			if bloodMan and bloodMan.Parent then
+				local targetPart = bloodMan:FindFirstChild("HumanoidRootPart") or bloodMan:FindFirstChild("Head") or bloodMan:FindFirstChildWhichIsA("BasePart")
+				if targetPart then
+					local origin, destination = hrp.Position + Vector3.new(0, 1, 0), targetPart.Position + Vector3.new(0, 1, 0)
+					local direction, distance = (destination - origin).Unit, (destination - origin).Magnitude
+					local raycastParams = RaycastParams.new() raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+					local ignoreList = {}
+					for _, v in pairs(char:GetDescendants()) do if v:IsA("BasePart") then table.insert(ignoreList, v) end end
+					for _, v in pairs(bloodMan:GetDescendants()) do if v:IsA("BasePart") then table.insert(ignoreList, v) end end
+					for i = 1, #cachedHumanoidModels do local model = cachedHumanoidModels[i] if model ~= char and model ~= bloodMan then for _, v in pairs(model:GetDescendants()) do if v:IsA("BasePart") then table.insert(ignoreList, v) end end end end
+					raycastParams.FilterDescendantsInstances = ignoreList
+					local raycastResult = workspace:Raycast(origin, direction * distance, raycastParams)
+					if not raycastResult then
+						local humanoid = char:FindFirstChildOfClass("Humanoid") if humanoid then humanoid.AutoRotate = false end
+						hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(targetPart.Position.X, hrp.Position.Y, targetPart.Position.Z))
+						return
+					end
+				end
+			end
+		end
+		local currentCFrame = hrp.CFrame local rotationAngle = math.rad(RotationConfig.Speed * RotationConfig.Direction) local newCFrame = currentCFrame * CFrame.Angles(0, rotationAngle, 0) hrp.CFrame = newCFrame
+	end)
+end
+
+LPlr.CharacterAdded:Connect(function(char)
+	task.wait(0.5)
+	if RotationConfig.Enabled then
+		local humanoid = char:FindFirstChildOfClass("Humanoid") if humanoid then humanoid.AutoRotate = false end
+		if rotationConnection then rotationConnection:Disconnect() rotationConnection = nil end
+		startRotation()
+	end
+end)
+
+tRotation:AddSection({ Name = "旋转功能" })
+tRotation:AddToggle({ Name = "开启旋转", Default = false, Callback = function(v) RotationConfig.Enabled = v if v then startRotation() else if rotationConnection then rotationConnection:Disconnect() rotationConnection = nil end if LPlr.Character then local humanoid = LPlr.Character:FindFirstChildOfClass("Humanoid") if humanoid then humanoid.AutoRotate = true end end end end })
+tRotation:AddSlider({ Name = "旋转速度", Min = 1, Max = 500, Default = 1, Increment = 1, ValueName = "度/帧", Callback = function(v) RotationConfig.Speed = v end })
+tRotation:AddDropdown({ Name = "旋转方向", Default = "顺时针", Options = { "顺时针", "逆时针" }, Callback = function(v) if v == "顺时针" then RotationConfig.Direction = 1 else RotationConfig.Direction = -1 end end })
+
+local t3 = Window:MakeTab({ Name = "DOORS", Icon = TAB_ICON })
+t3:AddButton({ Name = "Velocity X", Callback = function() loadstring(game:HttpGet("https://velocityloader.vercel.app/"))() end })
+t3:AddButton({ Name = "OP实体生成器", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/althan99/doors-entity-spawner/main/Script"))() end })
+
+local t4 = Window:MakeTab({ Name = "Forsaken", Icon = TAB_ICON })
+t4:AddButton({ Name = "Byby Hub", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Edulucas2013/Byby-hub/refs/heads/main/Forsaken%20byby%20hub"))() end })
+
+local t5 = Window:MakeTab({ Name = "自然灾害幸存", Icon = TAB_ICON })
+t5:AddButton({ Name = "NDS HUB", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/KaterHub-Inc/NaturalDisasterSurvival/refs/heads/main/main.lua"))() end })
+t5:AddButton({ Name = "Super Ring Parts V4", Callback = function() loadstring(game:HttpGet("https://rscripts.net/raw/super-ring-parts-v4-by-lukas_1741980981842_td0ummjymf.txt", true))() end })
+
+local t6 = Window:MakeTab({ Name = "Blox Fruits", Icon = TAB_ICON })
+t6:AddButton({ Name = "4479Hub", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/4479cantcode/4479Hub/refs/heads/main/Script.lua"))() end })
+
+local t7 = Window:MakeTab({ Name = "Rooms&Doors", Icon = TAB_ICON })
+t7:AddButton({ Name = "Xera Hub", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/NobodyOrIdk/XeraHub/main/main.lua"))() end })
+
+local t8 = Window:MakeTab({ Name = "逃离海啸，获得脑腐", Icon = TAB_ICON })
+t8:AddButton({ Name = "1", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/scriptify12/EscapeTsunami/main/KeySystem.lua", true))() end })
+
+local t9 = Window:MakeTab({ Name = "偷走脑腐", Icon = TAB_ICON })
+t9:AddButton({ Name = "1", Callback = function() loadstring(game:HttpGet("https://api.luarmor.net/files/v3/loaders/fcc63f5f04efa9a6a85d6f16a179b870.lua"))() end })
+
+local t10 = Window:MakeTab({ Name = "疯狂电梯", Icon = TAB_ICON })
+t10:AddButton({ Name = "免费工具", Callback = function() loadstring(game:HttpGet("https://pastebin.com/raw/vE8WMLit", true))() end })
+
+local t11 = Window:MakeTab({ Name = "Fish It", Icon = TAB_ICON })
+t11:AddButton({ Name = "1", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/dilleron964/Fish-It/main/Fish-It.lua"))() end })
+
+local t12 = Window:MakeTab({ Name = "内脏与黑火药", Icon = TAB_ICON })
+t12:AddButton({ Name = "Katchi Hub", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/XaviscoZ/roblox/refs/heads/main/g%26b.lua"))() end })
+
+local t13 = Window:MakeTab({ Name = "森林中的99夜", Icon = TAB_ICON })
+t13:AddButton({ Name = "UNPERFORMED HUB", Callback = function() loadstring(game:HttpGet("https://api.junkie-development.de/api/v1/luascripts/public/6ed3b0b29cae165a5df389c3650171583312f6baeaf622f2330521e9c340436c/download"))() end })
+
+local t14 = Window:MakeTab({ Name = "FNAF:永恒之夜", Icon = TAB_ICON })
+t14:AddButton({ Name = "1", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Snipez-Dev/Rbx-Scripts/refs/heads/main/Eternal%20Nights"))() end })
+
+local t15 = Window:MakeTab({ Name = "种植花园", Icon = TAB_ICON })
+t15:AddButton({ Name = "Zap Hub", Callback = function() loadstring(game:HttpGet("https://zaphub.xyz/Exec"))() end })
+
+local t16 = Window:MakeTab({ Name = "莱辛顿和康科德", Icon = TAB_ICON })
+t16:AddButton({ Name = "1", Callback = function() loadstring(game:HttpGet("https://rawscripts.net/raw/Lexington-and-Concord-LC-75016"))() end })
+
+local TargetMonkeys = { ["Lurker"] = true, ["Kus"] = true, ["Dus"] = true, ["Gus"] = true, ["SandMan"] = true, ["Ashy"] = true, ["Lost"] = true, ["Scar"] = true, ["Billy"] = true, ["SangGuy"] = true, ["Meat"] = true, ["???"] = true, ["Taller"] = true, ["Slender"] = true, ["BloodMan"] = true, ["Lengthy"] = true, ["Gooba"] = true }
+local TargetEarMonkeys = { ["SawRunner"] = true, ["Crawly"] = true, ["Claw"] = true, ["slender"] = true }
+
+local function CreateOutlineESP(model)
+	if not model:FindFirstChild("Monkey_Highlight_ESP") then
+		local hl = Instance.new("Highlight") hl.Name, hl.FillColor, hl.FillTransparency, hl.OutlineColor, hl.OutlineTransparency, hl.DepthMode, hl.Parent = "Monkey_Highlight_ESP", Color3.fromRGB(255, 60, 0), 0.5, Color3.fromRGB(255, 255, 255), 0, Enum.HighlightDepthMode.AlwaysOnTop, model
+	end
+	if not model:FindFirstChild("Monkey_Text_ESP") then
+		local targetPart = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head") or model:FindFirstChildOfClass("BasePart")
+		if targetPart then
+			local billboard = Instance.new("BillboardGui") billboard.Name, billboard.Size, billboard.AlwaysOnTop, billboard.ExtentsOffset, billboard.Adornee, billboard.Parent = "Monkey_Text_ESP", UDim2.new(0, 180, 0, 50), true, Vector3.new(0, 3.5, 0), targetPart, model
+			local label = Instance.new("TextLabel") label.Size, label.BackgroundTransparency, label.Text, label.TextColor3, label.TextSize, label.Font, label.TextStrokeTransparency, label.Parent = UDim2.new(1, 0, 1, 0), 1, model.Name, Color3.fromRGB(255, 60, 0), 16, Enum.Font.SourceSansBold, 0, billboard
+		end
+	end
+end
+
+local function CreateEarGameESP(model)
+	if not model:FindFirstChild("EarGame_Highlight_ESP") then
+		local hl = Instance.new("Highlight") hl.Name, hl.FillColor, hl.FillTransparency, hl.OutlineColor, hl.OutlineTransparency, hl.DepthMode, hl.Parent = "EarGame_Highlight_ESP", Color3.fromRGB(255, 0, 100), 0.4, Color3.fromRGB(255, 0, 100), 0, Enum.HighlightDepthMode.AlwaysOnTop, model
+	end
+	if model and not model:FindFirstChild("EarGame_Text_ESP") then
+		local targetPart = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head") or model:FindFirstChildOfClass("BasePart")
+		if targetPart then
+			local billboard = Instance.new("BillboardGui") billboard.Name, billboard.Size, billboard.AlwaysOnTop, billboard.ExtentsOffset, billboard.Adornee, billboard.Parent = "EarGame_Text_ESP", UDim2.new(0, 180, 0, 50), true, Vector3.new(0, 3.5, 0), targetPart, model
+			local label = Instance.new("TextLabel") label.Size, label.BackgroundTransparency, label.Text, label.TextColor3, label.TextSize, label.Font, label.TextStrokeTransparency, label.Parent = UDim2.new(1, 0, 1, 0), 1, model.Name, Color3.fromRGB(255, 0, 100), 16, Enum.Font.SourceSansBold, 0, billboard
+		end
+	end
+end
+
+local function CreateScrapESP(part)
+	if not part:FindFirstChild("Scrap_Highlight_ESP") then
+		local hl = Instance.new("Highlight") hl.Name, hl.FillColor, hl.FillTransparency, hl.OutlineColor, hl.OutlineTransparency, hl.DepthMode, hl.Parent = "Scrap_Highlight_ESP", Color3.fromRGB(0, 255, 100), 0.5, Color3.fromRGB(255, 255, 255), 0, Enum.HighlightDepthMode.AlwaysOnTop, part
+	end
+	if not part:FindFirstChild("Scrap_Text_ESP") then
+		local billboard = Instance.new("BillboardGui") billboard.Name, billboard.Size, billboard.AlwaysOnTop, billboard.ExtentsOffset, billboard.Adornee, billboard.Parent = "Scrap_Text_ESP", UDim2.new(0, 150, 0, 40), true, Vector3.new(0, 2, 0), part, part
+		local label = Instance.new("TextLabel") label.Size, label.BackgroundTransparency, label.Text, label.TextColor3, label.TextSize, label.Font, label.TextStrokeTransparency, label.Parent = UDim2.new(1, 0, 1, 0), 1, part.Name, Color3.fromRGB(0, 255, 100), 14, Enum.Font.SourceSansBold, 0, billboard
+	end
+end
+
+local function CreateRecyclerESP(obj)
+	if not obj:FindFirstChild("Recycler_Highlight_ESP") then
+		local hl = Instance.new("Highlight") hl.Name, hl.FillColor, hl.FillTransparency, hl.OutlineColor, hl.OutlineTransparency, hl.DepthMode, hl.Parent = "Recycler_Highlight_ESP", Color3.fromRGB(170, 85, 255), 0.4, Color3.fromRGB(255, 255, 255), 0, Enum.HighlightDepthMode.AlwaysOnTop, obj
+	end
+	if not obj:FindFirstChild("Recycler_Text_ESP") then
+		local targetPart = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
+		if targetPart then
+			local billboard = Instance.new("BillboardGui") billboard.Name, billboard.Size, billboard.AlwaysOnTop, billboard.ExtentsOffset, billboard.Adornee, billboard.Parent = "Recycler_Text_ESP", UDim2.new(0, 160, 0, 40), true, Vector3.new(0, 4, 0), targetPart, obj
+			local label = Instance.new("TextLabel") label.Size, label.BackgroundTransparency, label.Text, label.TextColor3, label.TextSize, label.Font, label.TextStrokeTransparency, label.Parent = UDim2.new(1, 0, 1, 0), 1, "废品回收机", Color3.fromRGB(170, 85, 255), 15, Enum.Font.SourceSansBold, 0, billboard
+		end
+	end
+end
+
+local function CreateCardESP(part)
+	if not part:FindFirstChild("Card_Highlight_ESP") then
+		local hl = Instance.new("Highlight") hl.Name, hl.FillColor, hl.FillTransparency, hl.OutlineColor, hl.OutlineTransparency, hl.DepthMode, hl.Parent = "Card_Highlight_ESP", Color3.fromRGB(0, 200, 255), 0.4, Color3.fromRGB(255, 255, 255), 0, Enum.HighlightDepthMode.AlwaysOnTop, part
+	end
+	if not part:FindFirstChild("Card_Text_ESP") then
+		local billboard = Instance.new("BillboardGui") billboard.Name, billboard.Size, billboard.AlwaysOnTop, billboard.ExtentsOffset, billboard.Adornee, billboard.Parent = "Card_Text_ESP", UDim2.new(0, 150, 0, 40), true, Vector3.new(0, 2, 0), part, part
+		local label = Instance.new("TextLabel") label.Size, label.BackgroundTransparency, label.Text, label.TextColor3, label.TextSize, label.Font, label.TextStrokeTransparency, label.Parent = UDim2.new(1, 0, 1, 0), 1, "Card", Color3.fromRGB(0, 200, 255), 15, Enum.Font.SourceSansBold, 0, billboard
+	end
+end
+
+local function InteractWithObject(obj)
+	local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+	if prompt then fireproximityprompt(prompt) else game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.E, false, game) game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.E, false, game) end
+end
+
+local function IsValidGroundItem(obj)
+	local allPlayers = Players:GetPlayers()
+	for i = 1, #allPlayers do local p = allPlayers[i] if p.Character and obj:IsDescendantOf(p.Character) then return false end local bp = p:FindFirstChild("Backpack") if bp and obj:IsDescendantOf(bp) then return false end end
+	if obj:IsA("BasePart") then if obj.Transparency > 0.5 or obj.Position.Y < -50 then return false end else if obj:GetPivot().Position.Y < -50 then return false end end
+	return true
+end
+
+local ItemPriority = { ["Screw"] = 1, ["Pipe"] = 1, ["Bucket"] = 1, ["Baterry"] = 1, ["Gear"] = 1, ["Cleaner"] = 1, ["Emerald"] = 14, ["Diamond"] = 7, ["Gold"] = 2, ["Copper"] = 1, ["Meat"] = 3 }
+
+local function PlayerHasLootToSell()
+	local char = LPlr.Character local bp = LPlr:FindFirstChild("Backpack")
+	if bp then for _, tool in pairs(bp:GetChildren()) do if tool:IsA("Tool") and ItemPriority[tool.Name] then return true end end end
+	if char then for _, tool in pairs(char:GetChildren()) do if tool:IsA("Tool") and ItemPriority[tool.Name] then return true end end end
+	return false
+end
+
+local function FindBestItem()
+	local bestItem, bestPriority = nil, 0
+	local scrapsFolder = workspace:FindFirstChild("Scraps")
+	if not scrapsFolder then return nil end
+	for _, v in pairs(scrapsFolder:GetChildren()) do
+		if (v:IsA("BasePart") or v:IsA("Model")) and IsValidGroundItem(v) then
+			local priority = ItemPriority[v.Name] or 0
+			if priority > bestPriority then bestPriority, bestItem = priority, v end
+		end
+	end
+	return bestItem
+end
+
+local _cachedRecycler = nil
+local function GetRecycler()
+	if _cachedRecycler and _cachedRecycler.Parent then return _cachedRecycler end
+	_cachedRecycler = workspace:FindFirstChild("ScrapRecycler", true)
+	return _cachedRecycler
+end
+
+-- ★ 核心修复：重写刷钱循环，防止服务器死锁
+task.spawn(function()
+	while true do
+		if Config.AutoGold and LPlr.Character and LPlr.Character:FindFirstChild("HumanoidRootPart") then
+			local hrp = LPlr.Character.HumanoidRootPart
+			local humanoid = LPlr.Character:FindFirstChildOfClass("Humanoid")
+
+			if humanoid and humanoid.Health > 0 then
+				if PlayerHasLootToSell() then
+					local recycler = GetRecycler()
+					if recycler then
+						local pos = (recycler:IsA("BasePart") and recycler.CFrame.Position) or recycler:GetPivot().Position
+						hrp.AssemblyLinearVelocity = Vector3.zero
+						hrp.AssemblyAngularVelocity = Vector3.zero
+						hrp.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0))
+						task.wait(0.15)
+						InteractWithObject(recycler)
+						task.wait(0.25)
+					else
+						task.wait(1)
+					end
+				else
+					local targetItem = FindBestItem()
+					if targetItem then
+						local pos = (targetItem:IsA("BasePart") and targetItem.CFrame.Position) or targetItem:GetPivot().Position
+						hrp.AssemblyLinearVelocity = Vector3.zero
+						hrp.AssemblyAngularVelocity = Vector3.zero
+						hrp.CFrame = CFrame.new(pos + Vector3.new(0, 2, 0))
+						task.wait(0.15)
+						InteractWithObject(targetItem)
+						task.wait(0.15)
+					else
+						task.wait(0.5)
+					end
+				end
+			end
+		end
+		task.wait(0.1)
+	end
+end)
+
+local function ApplyObjectESP(v)
+	if not v or not v.Parent then return end
+	if TargetMonkeys[v.Name] and v:IsA("Model") then
+		if Config.MonkeyESP then CreateOutlineESP(v) end
+	elseif TargetEarMonkeys[v.Name] and v:IsA("Model") then
+		if Config.EarGameESP then CreateEarGameESP(v) end
+	elseif v.Name == "ScrapRecycler" and (v:IsA("BasePart") or v:IsA("Model")) then
+		if Config.RecyclerESP then CreateRecyclerESP(v) end
+	elseif v.Name == "Card" and v:IsA("MeshPart") then
+		if Config.CardESP and IsValidGroundItem(v) then CreateCardESP(v) if not table.find(ActiveCards, v) then table.insert(ActiveCards, v) end end
+	elseif v.Name == "SCP-3199" and v:IsA("Model") then
+		if Config.SCPHighlight and not v:FindFirstChild("SCP3199_ESP") then
+			local h = Instance.new("Highlight", v) h.Name, h.FillColor = "SCP3199_ESP", Color3.new(1, 0, 0)
+			local b = Instance.new("BillboardGui", v) b.Name, b.Size, b.Adornee, b.AlwaysOnTop, b.ExtentsOffset = "SCP3199_ESP", UDim2.new(0, 150, 0, 50), v.PrimaryPart or v:FindFirstChild("Head"), true, Vector3.new(0, 3, 0)
+			local l = Instance.new("TextLabel", b) l.Size, l.BackgroundTransparency, l.Text, l.TextColor3, l.TextSize = UDim2.new(1, 0, 1, 0), 1, "SCP-3199", Color3.new(1, 0, 0), 14
+		end
+	end
+end
+
+local function ApplyScrapESPOnly(v) if Config.ScrapESP and (v:IsA("BasePart") or v:IsA("Model")) then CreateScrapESP(v) end end
+workspace.DescendantAdded:Connect(ApplyObjectESP)
+local scrapsFolder = workspace:FindFirstChild("Scraps") if scrapsFolder then scrapsFolder.ChildAdded:Connect(ApplyScrapESPOnly) end
+
+local function OneTimeFullRefresh() for _, v in pairs(workspace:GetDescendants()) do ApplyObjectESP(v) end end
+local function OneTimeScrapRefresh() if scrapsFolder then for _, v in pairs(scrapsFolder:GetChildren()) do ApplyScrapESPOnly(v) end end end
+
+task.spawn(function()
+	while task.wait(1) do
+		if Config.CardESP then
+			for i = #ActiveCards, 1, -1 do
+				local v = ActiveCards[i]
+				if v and v.Parent then
+					if not IsValidGroundItem(v) then
+						if v:FindFirstChild("Card_Highlight_ESP") then v.Card_Highlight_ESP:Destroy() end
+						if v:FindFirstChild("Card_Text_ESP") then v.Card_Text_ESP:Destroy() end
+						table.remove(ActiveCards, i)
+					end
+				else table.remove(ActiveCards, i) end
+			end
+		end
+	end
+end)
+
+local t17 = Window:MakeTab({ Name = "SCP:3199示范", Icon = TAB_ICON })
+t17:AddToggle({ Name = "SCP-3199高亮", Callback = function(v) Config.SCPHighlight = v if v then OneTimeFullRefresh() else for _, o in pairs(workspace:GetChildren()) do if o:FindFirstChild("SCP3199_ESP") then o.SCP3199_ESP:Destroy() end end end end })
+t17:AddToggle({ Name = "无限体力", Callback = function(v) Config.InfStamina = v end })
+
+local t18 = Window:MakeTab({ Name = "黑客GUI", Icon = TAB_ICON })
+t18:AddButton({ Name = "c00lgui", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/c00lgui.LUA"))() end })
+t18:AddButton({ Name = "1x1x1x1gui", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/1x1x1x1gui%203.3.LUA"))() end })
+t18:AddButton({ Name = "k00pgui", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/k00pgui%20v12.LUA"))() end })
+
+local t19 = Window:MakeTab({ Name = "BloxStrike", Icon = TAB_ICON })
+t19:AddButton({ Name = "wyvern gui v2", Callback = function() loadstring(game:HttpGet("https://gist.githubusercontent.com/wydirdscripts/f6daf1950dd645377bb8a86e941baf9f/raw/c0b8895d18d12ceb8c1e5ae3d30798c5e10d972b/gistfile1.txt"))() end })
+
+local t20 = Window:MakeTab({ Name = "Solo Hunters", Icon = TAB_ICON })
+t20:AddButton({ Name = "1", Callback = function() loadstring(game:HttpGet("https://gist.githubusercontent.com/weeew07/d477f12afffdec7131886d9bdb06dbe7/raw/1a13b69b74915e3effa36ed447f6863cebd743a5/Solo%20Hunters"))() end })
+
+local t21 = Window:MakeTab({ Name = "ROB IT", Icon = TAB_ICON })
+t21:AddButton({ Name = "ROB IT HUB", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/agentstojak/ROB-IT/refs/heads/main/ROB%20IT"))() end })
+
+local t22 = Window:MakeTab({ Name = "死亡之死", Icon = TAB_ICON })
+t22:AddButton({ Name = "RedScripter102 HUB", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/RedScripter102/Script/refs/heads/main/Die%20of%20death%20updated"))() end })
+
+local tFused = Window:MakeTab({ Name = "致命猴子 & Ear Game", Icon = TAB_ICON })
+tFused:AddSection({ Name = "两个游戏通用" })
+local function hideBody(model) if model:IsA("Model") then local name = model.Name if name == "dead" or name == "ChimpRagdoll" then task.defer(function() if model and model.Parent then model.Archivable = true model.Parent = nil end end) end end end
+tFused:AddToggle({ Name = "隐藏尸体", Default = false, Callback = function(v) Config.HideBodies = v if v then for _, model in ipairs(workspace:GetDescendants()) do hideBody(model) end if not bodyConnection then bodyConnection = workspace.DescendantAdded:Connect(function(model) if Config.HideBodies then hideBody(model) end end) end else if bodyConnection then bodyConnection:Disconnect() bodyConnection = nil end end end })
+tFused:AddToggle({ Name = "开启刷钱", Default = false, Callback = function(v) local wasActive = Config.AutoGold Config.AutoGold = v if not v and wasActive then task.spawn(function() task.wait(0.05) if LPlr.Character and LPlr.Character:FindFirstChild("HumanoidRootPart") then local hrp = LPlr.Character.HumanoidRootPart local recycler = GetRecycler() if recycler then local pos = (recycler:IsA("BasePart") and recycler.CFrame.Position) or recycler:GetPivot().Position hrp.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0)) end end end) end end })
+tFused:AddButton({ Name = "跳杀镜头修改工具", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/CAMERA.LUA"))() end })
+tFused:AddButton({ Name = "复活", Callback = function() game:GetService("ReplicatedStorage").RequestRespawn:FireServer() end })
+tFused:AddButton({ Name = "删除跳杀动画", Callback = function() for _, v in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do if v:IsA("RemoteEvent") and string.find(v.Name, "Play") and string.find(v.Name, "Anim") then v:Destroy() end end end })
+tFused:AddButton({ Name = "成为怪物脚本", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/BTM.LUA"))() end })
+tFused:AddToggle({ Name = "开关废品Esp", Callback = function(v) Config.ScrapESP = v if v then OneTimeScrapRefresh() else for _, o in pairs(workspace:GetDescendants()) do if o.Name == "Scrap_Highlight_ESP" or o.Name == "Scrap_Text_ESP" then o:Destroy() end end end end })
+tFused:AddToggle({ Name = "开关回收机Esp", Callback = function(v) Config.RecyclerESP = v if v then OneTimeFullRefresh() else for _, o in pairs(workspace:GetDescendants()) do if o.Name == "Recycler_Highlight_ESP" or o.Name == "Recycler_Text_ESP" then o:Destroy() end end end end })
+tFused:AddSection({ Name = "致命猴子" })
+tFused:AddButton({ Name = "监控视角 (要坐到椅子上)", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/SecCamera.LUA"))() end })
+tFused:AddToggle({ Name = "自动朝向BloodMan", Default = false, Callback = function(v) Config.AutoAimBloodMan = v if not v and LPlr.Character then local humanoid = LPlr.Character:FindFirstChildOfClass("Humanoid") if humanoid then humanoid.AutoRotate = true end end end })
+tFused:AddButton({ Name = "Bone骨架修改工具", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Baloksxin/ROBLOX-BKU-SCRIPT/refs/heads/main/Scripts/6D%E9%AA%A8%E6%9E%B6%E5%8A%A8%E7%94%BB%E8%A6%86%E7%9B%96%E5%B7%A5%E5%85%B7.LUA"))() end })
+tFused:AddToggle({ Name = "开关怪物Esp", Callback = function(v) Config.MonkeyESP = v if v then OneTimeFullRefresh() else for _, o in pairs(workspace:GetDescendants()) do if o.Name == "Monkey_Highlight_ESP" or o.Name == "Monkey_Text_ESP" then o:Destroy() end end end end })
+tFused:AddSection({ Name = "Ear Game " })
+tFused:AddToggle({ Name = "开关怪物Esp", Callback = function(v) Config.EarGameESP = v if v then OneTimeFullRefresh() else for _, o in pairs(workspace:GetDescendants()) do if o.Name == "EarGame_Highlight_ESP" or o.Name == "EarGame_Text_ESP" then o:Destroy() end end end end })
+tFused:AddToggle({ Name = "防脚滑", Default = false, Callback = function(v) if v then enableAntiSlippery() else disableAntiSlippery() end end })
+tFused:AddToggle({ Name = "开关卡片Esp", Callback = function(v) Config.CardESP = v if v then OneTimeFullRefresh() else for _, o in pairs(workspace:GetDescendants()) do if o.Name == "Card_Highlight_ESP" or o.Name == "Card_Text_ESP" then o:Destroy() end end end end })
+
+RS.RenderStepped:Connect(function()
+	if Config.SpeedEn and LPlr.Character and LPlr.Character:FindFirstChild("Humanoid") then LPlr.Character.Humanoid.WalkSpeed = Config.Speed end
+	if Config.NightVis then Light.Brightness, Light.Ambient, Light.ClockTime = 2, Color3.new(1, 1, 1), 12 end
+	if Config.FOVEn and Cam then Cam.FieldOfView = Config.FOV end
+	if Config.ThirdPerson then LPlr.CameraMode = Enum.CameraMode.Classic end
+	if Config.InfStamina then pcall(function() local s = LPlr.PlayerGui.Stamina.Handler.Stamina if s.Value < 100 then s.Value = 100 end end) end
+end)
+
+RS.Stepped:Connect(function()
+	if Config.Noclip and LPlr.Character then for _, v in ipairs(LPlr.Character:GetDescendants()) do if v:IsA("BasePart") then if originalNoclipCollisions[v] == nil then originalNoclipCollisions[v] = v.CanCollide end v.CanCollide = false end end end
+	if Config.AnchorOnly and LPlr.Character then local hrp = LPlr.Character:FindFirstChild("HumanoidRootPart") if hrp then hrp.Anchored = true end end
+	if Config.FreezeSelf and LPlr.Character then
+		local hrp = LPlr.Character:FindFirstChild("HumanoidRootPart") if hrp then hrp.Anchored = true end
+		local humanoid = LPlr.Character:FindFirstChildOfClass("Humanoid") if humanoid then local animator = humanoid:FindFirstChildOfClass("Animator") if animator then for _, track in ipairs(animator:GetPlayingAnimationTracks()) do if track.Speed ~= 0 then cachedAnimationSpeeds[track] = track.Speed track:AdjustSpeed(0) end end end end
+	end
+end)
+
+UIS.JumpRequest:Connect(function() if Config.InfJump and LPlr.Character then local h = LPlr.Character:FindFirstChildOfClass("Humanoid") if h then h:ChangeState("Jumping") end end end)
+
+local aimRaycastParams = RaycastParams.new() aimRaycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+RS.RenderStepped:Connect(function()
+	if not Config.AutoAimBloodMan then return end
+	local char = LPlr.Character if not char then return end local hrp = char:FindFirstChild("HumanoidRootPart") local humanoid = char:FindFirstChildOfClass("Humanoid") if not hrp or not humanoid then return end
+	local bloodMan = cachedBloodMan
+	if bloodMan and bloodMan.Parent then
+		local targetPart = bloodMan:FindFirstChild("HumanoidRootPart") or bloodMan:FindFirstChild("Head") or bloodMan:FindFirstChildWhichIsA("BasePart")
+		if targetPart then
+			local origin, destination = hrp.Position + Vector3.new(0, 1, 0), targetPart.Position + Vector3.new(0, 1, 0)
+			local direction, distance = (destination - origin).Unit, (destination - origin).Magnitude
+			aimRaycastParams.FilterDescendantsInstances = { char, bloodMan }
+			local raycastResult = workspace:Raycast(origin, direction * distance, aimRaycastParams)
+			if raycastResult then if RotationConfig.Enabled then humanoid.AutoRotate = false else humanoid.AutoRotate = true end
+			else humanoid.AutoRotate = false hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(destination.X, hrp.Position.Y, destination.Z)) end
+		else humanoid.AutoRotate = true end
+	else humanoid.AutoRotate = true end
+end)
+
+task.spawn(function()
+	task.wait(1)
+	findAndMarkCreator()
+	for _, player in pairs(Players:GetPlayers()) do
+		if player.Name:lower() == "baloksxin_real" then
+			if not creatorInGame then creatorInGame = true sendNotification("BKU创建者已进入此服务器", 6) end
+			player.CharacterAdded:Connect(function(character) task.wait(0.5) removeCreatorESP(player) createCreatorESP(player) end)
+			if player.Character then createCreatorESP(player) end
+		end
+	end
+end)
+
+task.spawn(function() while true do findAndMarkCreator() task.wait(2) end end)
+
+OrionLib:Init()
