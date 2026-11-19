@@ -1,6 +1,6 @@
 -- ==============================================================
 -- 魔改版 Orion UI 引擎 (BKU特供)
--- 修复：标签图标丢失问题、内置离线备用图标
+-- 修复：标签图标丢失、内置离线备用图标、修复拖拽空气墙 Bug
 -- ==============================================================
 local CoreGui = game:GetService("CoreGui")
 local OrionLib = (function()
@@ -27,9 +27,8 @@ local OrionLib = (function()
     -- ===================== 图标加载与强力兜底 =====================
     local Icons = {}
     local Success, Response = pcall(function() Icons = HttpService:JSONDecode(game:HttpGetAsync("https://raw.githubusercontent.com/evoincorp/lucideblox/master/src/modules/util/icons.json")).icons end)
-    if not Success then warn("\nOrion Library - Failed to load Feather Icons. Using Fallback Icons.\n") end
-
-    -- 强力内置备用图标库（网络被墙时直接使用）
+    
+    -- 强力内置备用图标库
     local FallbackIcons = {
         home           = "rbxassetid://7733955511",
         eye            = "rbxassetid://7733960981",
@@ -82,23 +81,42 @@ local OrionLib = (function()
     end)
     
     local LastDragEnd = 0
+    
+    -- ★ 修复空气墙的核心拖拽函数
     local function MakeDraggable(DragPoint, Main)
         pcall(function()
             local Dragging, MousePos, FramePos = false, nil, nil
             AddConnection(DragPoint.InputBegan, function(Input)
                 if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
                     Dragging, MousePos, FramePos = true, Input.Position, Main.Position
-                    Input.Changed:Connect(function() if Input.UserInputState == Enum.UserInputState.End then Dragging = false LastDragEnd = tick() end end)
+                    Input.Changed:Connect(function() 
+                        if Input.UserInputState == Enum.UserInputState.End then 
+                            Dragging = false 
+                            LastDragEnd = tick() 
+                        end 
+                    end)
                 end
             end)
             AddConnection(UserInputService.InputChanged, function(Input)
                 if Dragging and (Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch) then
                     local Delta = Input.Position - MousePos
-                    local Camera, ViewportSize = workspace.CurrentCamera, workspace.CurrentCamera.ViewportSize
+                    local ViewportSize = workspace.CurrentCamera.ViewportSize
                     local RawX = FramePos.X.Scale * ViewportSize.X + FramePos.X.Offset + Delta.X
                     local RawY = FramePos.Y.Scale * ViewportSize.Y + FramePos.Y.Offset + Delta.Y
+                    
                     local Size, Anchor = Main.AbsoluteSize, Main.AnchorPoint
-                    Main.Position = UDim2.new(0, math.clamp(RawX, Anchor.X * Size.X, ViewportSize.X - ((1 - Anchor.X) * Size.X)), 0, math.clamp(RawY, Anchor.Y * Size.Y, ViewportSize.Y - ((1 - Anchor.Y) * Size.Y)))
+                    
+                    -- 重新计算边界，允许向上突破屏幕（留出 30 像素防丢失）
+                    local MinX = -(Size.X * Anchor.X) + 30
+                    local MaxX = ViewportSize.X - (Size.X * (1 - Anchor.X)) - 30
+                    local MinY = -(Size.Y * Anchor.Y) + 30
+                    local MaxY = ViewportSize.Y - (Size.Y * (1 - Anchor.Y)) - 30
+                    
+                    -- 防止因缩放或极小屏幕导致 Min 大于 Max 卡死
+                    if MinX > MaxX then MinX = MaxX end
+                    if MinY > MaxY then MinY = MaxY end
+                    
+                    Main.Position = UDim2.new(0, math.clamp(RawX, MinX, MaxX), 0, math.clamp(RawY, MinY, MaxY))
                 end
             end)
         end)
@@ -144,8 +162,6 @@ local OrionLib = (function()
         for a, b in pairs(Data) do 
             if OrionLib.Flags[a] then 
                 spawn(function() if OrionLib.Flags[a].Type == "Colorpicker" then OrionLib.Flags[a]:Set(UnpackColor(b)) else OrionLib.Flags[a]:Set(b) end end) 
-            else 
-                warn("Orion Library Config Loader - Could not find ", a, b) 
             end 
         end 
     end
@@ -158,7 +174,7 @@ local OrionLib = (function()
                 if v.Type == "Colorpicker" then Data[i] = PackColor(v.Value) else Data[i] = v.Value end 
             end 
         end 
-        writefile(OrionLib.Folder .. "/" .. Name .. ".lua", tostring(HttpService:JSONEncode(Data))) 
+        pcall(function() writefile(OrionLib.Folder .. "/" .. Name .. ".lua", tostring(HttpService:JSONEncode(Data))) end)
     end
     
     CreateElement("Corner", function(Scale, Offset) return Create("UICorner", { CornerRadius = UDim.new(Scale or 0, Offset or 10) }) end)
@@ -210,11 +226,15 @@ local OrionLib = (function()
         WindowConfig.IntroIcon = WindowConfig.IntroIcon or "rbxassetid://8834748103"
         OrionLib.Folder, OrionLib.SaveCfg = WindowConfig.ConfigFolder, WindowConfig.SaveConfig
         if WindowConfig.SaveConfig then if not isfolder(WindowConfig.ConfigFolder) then makefolder(WindowConfig.ConfigFolder) end end
+        
+        -- 拖拽条区域
+        local DragPoint = SetProps(MakeElement("TFrame"), { Size = UDim2.new(1, 0, 0, 50), Position = UDim2.new(0, 0, 0, 0), ZIndex = 2 })
+        
         local TabHolder = AddThemeObject(SetChildren(SetProps(MakeElement("ScrollFrame", Color3.fromRGB(255, 255, 255), 4), { Size = UDim2.new(1, 0, 1, -50) }), { MakeElement("List"), MakeElement("Padding", 8, 0, 0, 8) }), "Divider")
         AddConnection(TabHolder.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), function() TabHolder.CanvasSize = UDim2.new(0, 0, 0, TabHolder.UIListLayout.AbsoluteContentSize.Y + 16) end)
-        local CloseBtn = SetChildren(SetProps(MakeElement("Button"), { Size = UDim2.new(0.5, 0, 1, 0), Position = UDim2.new(0.5, 0, 0, 0), BackgroundTransparency = 1 }), { AddThemeObject(SetProps(MakeElement("Image", "rbxassetid://7072725342"), { Position = UDim2.new(0, 9, 0, 6), Size = UDim2.new(0, 18, 0, 18) }), "Text") })
-        local MinimizeBtn = SetChildren(SetProps(MakeElement("Button"), { Size = UDim2.new(0.5, 0, 1, 0), BackgroundTransparency = 1 }), { AddThemeObject(SetProps(MakeElement("Image", "rbxassetid://7072719338"), { Position = UDim2.new(0, 9, 0, 6), Size = UDim2.new(0, 18, 0, 18), Name = "Ico" }), "Text") })
-        local DragPoint = SetProps(MakeElement("TFrame"), { Size = UDim2.new(1, 0, 0, 50) })
+        local CloseBtn = SetChildren(SetProps(MakeElement("Button"), { Size = UDim2.new(0.5, 0, 1, 0), Position = UDim2.new(0.5, 0, 0, 0), BackgroundTransparency = 1, ZIndex = 3 }), { AddThemeObject(SetProps(MakeElement("Image", "rbxassetid://7072725342"), { Position = UDim2.new(0, 9, 0, 6), Size = UDim2.new(0, 18, 0, 18) }), "Text") })
+        local MinimizeBtn = SetChildren(SetProps(MakeElement("Button"), { Size = UDim2.new(0.5, 0, 1, 0), BackgroundTransparency = 1, ZIndex = 3 }), { AddThemeObject(SetProps(MakeElement("Image", "rbxassetid://7072719338"), { Position = UDim2.new(0, 9, 0, 6), Size = UDim2.new(0, 18, 0, 18), Name = "Ico" }), "Text") })
+        
         local WindowStuff = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 10), { Size = UDim2.new(0, 150, 1, -50), Position = UDim2.new(0, 0, 0, 50) }), { AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(1, 0, 0, 10), Position = UDim2.new(0, 0, 0, 0) }), "Second"), AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(0, 10, 1, 0), Position = UDim2.new(1, -10, 0, 0) }), "Second"), AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(0, 1, 1, 0), Position = UDim2.new(1, -1, 0, 0) }), "Stroke"), TabHolder, SetChildren(SetProps(MakeElement("TFrame"), { Size = UDim2.new(1, 0, 0, 50), Position = UDim2.new(0, 0, 1, -50) }), { AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(1, 0, 0, 1) }), "Stroke"), AddThemeObject(SetChildren(SetProps(MakeElement("Frame"), { AnchorPoint = Vector2.new(0, 0.5), Size = UDim2.new(0, 32, 0, 32), Position = UDim2.new(0, 10, 0.5, 0) }), { SetProps(MakeElement("Image", "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LocalPlayer.UserId .. "&width=420&height=420&format=png"), { Size = UDim2.new(1, 0, 1, 0) }), AddThemeObject(SetProps(MakeElement("Image", "rbxassetid://4031889928"), { Size = UDim2.new(1, 0, 1, 0) }), "Second"), MakeElement("Corner", 1) }), "Divider"), SetChildren(SetProps(MakeElement("TFrame"), { AnchorPoint = Vector2.new(0, 0.5), Size = UDim2.new(0, 32, 0, 32), Position = UDim2.new(0, 10, 0.5, 0) }), { AddThemeObject(MakeElement("Stroke"), "Stroke"), MakeElement("Corner", 1) }), AddThemeObject(SetProps(MakeElement("Label", LocalPlayer.DisplayName, WindowConfig.HidePremium and 14 or 13), { Size = UDim2.new(1, -60, 0, 13), Position = WindowConfig.HidePremium and UDim2.new(0, 50, 0, 19) or UDim2.new(0, 50, 0, 12), Font = Enum.Font.GothamBold, ClipsDescendants = true }), "Text"), AddThemeObject(SetProps(MakeElement("Label", "", 12), { Size = UDim2.new(1, -60, 0, 12), Position = UDim2.new(0, 50, 1, -25), Visible = not WindowConfig.HidePremium }), "TextDark") }) }), "Second")
         
         local WindowName = AddThemeObject(SetProps(MakeElement("Label", WindowConfig.Name, 14), { Size = UDim2.new(1, -120, 0, 22), Position = UDim2.new(0, 25, 0, 4), Font = Enum.Font.GothamBlack, TextSize = 18 }), "Text")
@@ -224,21 +244,31 @@ local OrionLib = (function()
         end
         
         local WindowTopBarLine = AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -1) }), "Stroke")
-        local MainWindow = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 10), { Parent = Orion, Position = UDim2.new(0.5, -307, 0.5, -172), Size = UDim2.new(0, 615, 0, 344), ClipsDescendants = true, Active = true, Draggable = false }), { SetChildren(SetProps(MakeElement("TFrame"), { Size = UDim2.new(1, 0, 0, 50), Name = "TopBar" }), { WindowName, WindowSubTitle, WindowTopBarLine, AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 7), { Size = UDim2.new(0, 70, 0, 30), Position = UDim2.new(1, -90, 0, 10) }), { AddThemeObject(MakeElement("Stroke"), "Stroke"), AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(0, 1, 1, 0), Position = UDim2.new(0.5, 0, 0, 0) }), "Stroke"), CloseBtn, MinimizeBtn }), "Second") }), DragPoint, WindowStuff }), "Main")
+        
+        -- 初始位置改到偏上方，方便用户
+        local MainWindow = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 10), { Parent = Orion, Position = UDim2.new(0.5, -307, 0, 50), Size = UDim2.new(0, 615, 0, 344), ClipsDescendants = true, Active = true, Draggable = false }), { SetChildren(SetProps(MakeElement("TFrame"), { Size = UDim2.new(1, 0, 0, 50), Name = "TopBar" }), { WindowName, WindowSubTitle, WindowTopBarLine, AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 7), { Size = UDim2.new(0, 70, 0, 30), Position = UDim2.new(1, -90, 0, 10) }), { AddThemeObject(MakeElement("Stroke"), "Stroke"), AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(0, 1, 1, 0), Position = UDim2.new(0.5, 0, 0, 0) }), "Stroke"), CloseBtn, MinimizeBtn }), "Second") }), DragPoint, WindowStuff }), "Main")
+        
         if WindowConfig.ShowIcon then WindowName.Position = UDim2.new(0, 50, 0, -24) local WindowIcon = SetProps(MakeElement("Image", WindowConfig.Icon), { Size = UDim2.new(0, 20, 0, 20), Position = UDim2.new(0, 25, 0, 15) }) WindowIcon.Parent = MainWindow.TopBar end
+        
+        -- 应用修复后的拖拽
         MakeDraggable(DragPoint, MainWindow)
+        
         local OpenToggleBtn = Create("TextButton", { Name = "OrionOpenToggle", Size = UDim2.new(0, 50, 0, 50), Position = UDim2.new(0, 20, 0.5, -25), BackgroundColor3 = Color3.fromRGB(20, 35, 50), Text = "UI", TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.GothamBold, TextSize = 14, Visible = false, Active = true, Parent = Orion })
         Instance.new("UICorner", OpenToggleBtn).CornerRadius = UDim.new(0, 12)
         local Gradient = Instance.new("UIGradient", OpenToggleBtn) Gradient.Color = ColorSequence.new(Color3.fromRGB(100, 180, 230), Color3.fromRGB(40, 80, 120)) Gradient.Rotation = 45
         local Stroke = Instance.new("UIStroke", OpenToggleBtn) Stroke.Color = Color3.fromRGB(255, 255, 255) Stroke.Transparency = 0.5 Stroke.Thickness = 1.5
         OpenToggleBtn.MouseEnter:Connect(function() TweenService:Create(OpenToggleBtn, TweenInfo.new(0.3), { Size = UDim2.new(0, 55, 0, 55) }):Play() end) OpenToggleBtn.MouseLeave:Connect(function() TweenService:Create(OpenToggleBtn, TweenInfo.new(0.3), { Size = UDim2.new(0, 50, 0, 50) }):Play() end) OpenToggleBtn.MouseButton1Click:Connect(function() OrionLib:Toggle() end)
         MakeDraggable(OpenToggleBtn, OpenToggleBtn)
+        
         local function SetUIVisibility(visible) MainWindow.Visible = visible UIHidden = not visible OpenToggleBtn.Visible = not visible end
         AddConnection(CloseBtn.MouseButton1Up, function() SetUIVisibility(false) OrionLib:MakeNotification({ Name = "界面隐藏", Content = "点击左侧开关或右Shift重新打开界面", Time = 5 }) local Sound = Instance.new("Sound") Sound.SoundId = "rbxassetid://4590662766" Sound.Parent = game:GetService("SoundService") Sound.Volume = 5 Sound:Play() spawn(function() Sound.Ended:Wait() Sound:Destroy() end) WindowConfig.CloseCallback() end)
-        AddConnection(OpenToggleBtn.MouseButton1Click, function() SetUIVisibility(true) end) AddConnection(UserInputService.InputBegan, function(Input) if Input.KeyCode == Enum.KeyCode.RightShift and UIHidden then SetUIVisibility(true) end end)
+        AddConnection(OpenToggleBtn.MouseButton1Click, function() SetUIVisibility(true) end) 
+        AddConnection(UserInputService.InputBegan, function(Input) if Input.KeyCode == Enum.KeyCode.RightShift and UIHidden then SetUIVisibility(true) end end)
         AddConnection(MinimizeBtn.MouseButton1Up, function() if Minimized then TweenService:Create(MainWindow, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = UDim2.new(0, 615, 0, 344) }):Play() MinimizeBtn.Ico.Image = "rbxassetid://7072719338" wait(0.02) MainWindow.ClipsDescendants = false WindowStuff.Visible = true WindowTopBarLine.Visible = true else MainWindow.ClipsDescendants = true WindowTopBarLine.Visible = false MinimizeBtn.Ico.Image = "rbxassetid://7072720870" TweenService:Create(MainWindow, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = UDim2.new(0, WindowName.TextBounds.X + 140, 0, 50) }):Play() wait(0.1) WindowStuff.Visible = false end Minimized = not Minimized end)
+        
         local function LoadSequence() MainWindow.Visible = false local LoadSequenceLogo = SetProps(MakeElement("Image", WindowConfig.IntroIcon), { Parent = Orion, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.4, 0), Size = UDim2.new(0, 28, 0, 28), ImageColor3 = Color3.fromRGB(255, 255, 255), ImageTransparency = 1 }) local LoadSequenceText = SetProps(MakeElement("Label", WindowConfig.IntroText, 14), { Parent = Orion, Size = UDim2.new(1, 0, 1, 0), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 19, 0.5, 0), TextXAlignment = Enum.TextXAlignment.Center, Font = Enum.Font.GothamBold, TextTransparency = 1 }) TweenService:Create(LoadSequenceLogo, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { ImageTransparency = 0, Position = UDim2.new(0.5, 0, 0.5, 0) }):Play() wait(0.8) TweenService:Create(LoadSequenceLogo, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = UDim2.new(0.5, -(LoadSequenceText.TextBounds.X / 2), 0.5, 0) }):Play() wait(0.3) TweenService:Create(LoadSequenceText, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextTransparency = 0 }):Play() wait(2) TweenService:Create(LoadSequenceText, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextTransparency = 1 }):Play() MainWindow.Visible = true LoadSequenceLogo:Destroy() LoadSequenceText:Destroy() end
         if WindowConfig.IntroEnabled then LoadSequence() end
+        
         local TabFunction = {}
         function TabFunction:MakeTab(TabConfig)
             TabConfig = TabConfig or {} TabConfig.Name = TabConfig.Name or "Tab" TabConfig.Icon = TabConfig.Icon or "" TabConfig.PremiumOnly = TabConfig.PremiumOnly or false
