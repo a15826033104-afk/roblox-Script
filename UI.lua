@@ -1,6 +1,6 @@
 -- ==============================================================
 -- 魔改版 Orion UI 引擎 (BKU特供)
--- 修复：标签图标丢失、内置离线备用图标、彻底解决拖拽空气墙 Bug
+-- 修复：标签图标丢失、头像乱码、彻底解决拖拽空气墙 Bug
 -- ==============================================================
 local CoreGui = game:GetService("CoreGui")
 local OrionLib = (function()
@@ -50,11 +50,14 @@ local OrionLib = (function()
         skull          = "rbxassetid://7734068338"
     }
 
+    -- ★ 修复：放行 rbxthumb:// 和 http 链接，防止头像被误判为图标替换
     local function GetIcon(IconName)
         if type(IconName) ~= "string" then return "" end
         if Icons[IconName] ~= nil then return Icons[IconName] end
         if FallbackIcons[IconName] ~= nil then return FallbackIcons[IconName] end
-        if IconName:find("rbxassetid://") then return IconName end
+        if IconName:find("rbxassetid://") or IconName:find("rbxthumb://") or IconName:find("http") then 
+            return IconName 
+        end
         return "rbxassetid://7734053426"
     end
 
@@ -81,7 +84,7 @@ local OrionLib = (function()
     
     local LastDragEnd = 0
     
-    -- ★ 核心修复：极度自由的拖拽函数
+    -- ★ 核心修复：极度自由的拖拽函数（无空气墙）
     local function MakeDraggable(DragPoint, Main)
         pcall(function()
             local Dragging, MousePos, FramePos = false, nil, nil
@@ -105,15 +108,12 @@ local OrionLib = (function()
                     
                     local Size = Main.AbsoluteSize
                     
-                    -- 允许极端突破限制：
-                    -- 水平：左右最多拖出屏幕，只要保留 50 像素在内
-                    -- 垂直：上下最多拖出屏幕，只要保留 20 像素在内
+                    -- 允许极端突破限制（只要保留 50/20 像素在屏幕内防丢失）
                     local MinX = -(Size.X - 50)
                     local MaxX = ViewportSize.X - 50
                     local MinY = -(Size.Y - 20)
                     local MaxY = ViewportSize.Y - 20
                     
-                    -- 防呆防卡死保护
                     if MinX > 0 then MinX = 0 end
                     if MaxX < ViewportSize.X then MaxX = ViewportSize.X end
                     if MinY > 0 then MinY = 0 end
@@ -239,7 +239,14 @@ local OrionLib = (function()
         local CloseBtn = SetChildren(SetProps(MakeElement("Button"), { Size = UDim2.new(0.5, 0, 1, 0), Position = UDim2.new(0.5, 0, 0, 0), BackgroundTransparency = 1, ZIndex = 3 }), { AddThemeObject(SetProps(MakeElement("Image", "rbxassetid://7072725342"), { Position = UDim2.new(0, 9, 0, 6), Size = UDim2.new(0, 18, 0, 18) }), "Text") })
         local MinimizeBtn = SetChildren(SetProps(MakeElement("Button"), { Size = UDim2.new(0.5, 0, 1, 0), BackgroundTransparency = 1, ZIndex = 3 }), { AddThemeObject(SetProps(MakeElement("Image", "rbxassetid://7072719338"), { Position = UDim2.new(0, 9, 0, 6), Size = UDim2.new(0, 18, 0, 18), Name = "Ico" }), "Text") })
         
-        local WindowStuff = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 10), { Size = UDim2.new(0, 150, 1, -50), Position = UDim2.new(0, 0, 0, 50) }), { AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(1, 0, 0, 10), Position = UDim2.new(0, 0, 0, 0) }), "Second"), AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(0, 10, 1, 0), Position = UDim2.new(1, -10, 0, 0) }), "Second"), AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(0, 1, 1, 0), Position = UDim2.new(1, -1, 0, 0) }), "Stroke"), TabHolder, SetChildren(SetProps(MakeElement("TFrame"), { Size = UDim2.new(1, 0, 0, 50), Position = UDim2.new(0, 0, 1, -50) }), { AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(1, 0, 0, 1) }), "Stroke"), AddThemeObject(SetChildren(SetProps(MakeElement("Frame"), { AnchorPoint = Vector2.new(0, 0.5), Size = UDim2.new(0, 32, 0, 32), Position = UDim2.new(0, 10, 0.5, 0) }), { SetProps(MakeElement("Image", "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LocalPlayer.UserId .. "&width=420&height=420&format=png"), { Size = UDim2.new(1, 0, 1, 0) }), AddThemeObject(SetProps(MakeElement("Image", "rbxassetid://4031889928"), { Size = UDim2.new(1, 0, 1, 0) }), "Second"), MakeElement("Corner", 1) }), "Divider"), SetChildren(SetProps(MakeElement("TFrame"), { AnchorPoint = Vector2.new(0, 0.5), Size = UDim2.new(0, 32, 0, 32), Position = UDim2.new(0, 10, 0.5, 0) }), { AddThemeObject(MakeElement("Stroke"), "Stroke"), MakeElement("Corner", 1) }), AddThemeObject(SetProps(MakeElement("Label", LocalPlayer.DisplayName, WindowConfig.HidePremium and 14 or 13), { Size = UDim2.new(1, -60, 0, 13), Position = WindowConfig.HidePremium and UDim2.new(0, 50, 0, 19) or UDim2.new(0, 50, 0, 12), Font = Enum.Font.GothamBold, ClipsDescendants = true }), "Text"), AddThemeObject(SetProps(MakeElement("Label", "", 12), { Size = UDim2.new(1, -60, 0, 12), Position = UDim2.new(0, 50, 1, -25), Visible = not WindowConfig.HidePremium }), "TextDark") }) }), "Second")
+        local WindowStuff = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 10), { Size = UDim2.new(0, 150, 1, -50), Position = UDim2.new(0, 0, 0, 50) }), { AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(1, 0, 0, 10), Position = UDim2.new(0, 0, 0, 0) }), "Second"), AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(0, 10, 1, 0), Position = UDim2.new(1, -10, 0, 0) }), "Second"), AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(0, 1, 1, 0), Position = UDim2.new(1, -1, 0, 0) }), "Stroke"), TabHolder, SetChildren(SetProps(MakeElement("TFrame"), { Size = UDim2.new(1, 0, 0, 50), Position = UDim2.new(0, 0, 1, -50) }), { AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(1, 0, 0, 1) }), "Stroke"), 
+            -- ★ 修复：头像加载使用官方原生 rbxthumb 协议，100% 稳定不乱码
+            AddThemeObject(SetChildren(SetProps(MakeElement("Frame"), { AnchorPoint = Vector2.new(0, 0.5), Size = UDim2.new(0, 32, 0, 32), Position = UDim2.new(0, 10, 0.5, 0) }), { 
+                SetProps(MakeElement("Image", "rbxthumb://type=AvatarHeadShot&id=" .. LocalPlayer.UserId .. "&w=150&h=150"), { Size = UDim2.new(1, 0, 1, 0) }), 
+                AddThemeObject(SetProps(MakeElement("Image", "rbxassetid://4031889928"), { Size = UDim2.new(1, 0, 1, 0) }), "Second"), 
+                MakeElement("Corner", 1) 
+            }), "Divider"), 
+            SetChildren(SetProps(MakeElement("TFrame"), { AnchorPoint = Vector2.new(0, 0.5), Size = UDim2.new(0, 32, 0, 32), Position = UDim2.new(0, 10, 0.5, 0) }), { AddThemeObject(MakeElement("Stroke"), "Stroke"), MakeElement("Corner", 1) }), AddThemeObject(SetProps(MakeElement("Label", LocalPlayer.DisplayName, WindowConfig.HidePremium and 14 or 13), { Size = UDim2.new(1, -60, 0, 13), Position = WindowConfig.HidePremium and UDim2.new(0, 50, 0, 19) or UDim2.new(0, 50, 0, 12), Font = Enum.Font.GothamBold, ClipsDescendants = true }), "Text"), AddThemeObject(SetProps(MakeElement("Label", "", 12), { Size = UDim2.new(1, -60, 0, 12), Position = UDim2.new(0, 50, 1, -25), Visible = not WindowConfig.HidePremium }), "TextDark") }) }), "Second")
         
         local WindowName = AddThemeObject(SetProps(MakeElement("Label", WindowConfig.Name, 14), { Size = UDim2.new(1, -120, 0, 22), Position = UDim2.new(0, 25, 0, 4), Font = Enum.Font.GothamBlack, TextSize = 18 }), "Text")
         local WindowSubTitle = nil 
