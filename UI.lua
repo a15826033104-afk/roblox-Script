@@ -1,6 +1,6 @@
 -- ==============================================================
 -- 魔改版 Orion UI 引擎 (BKU特供)
--- 修复：标签图标丢失、内置离线备用图标、修复拖拽空气墙 Bug
+-- 修复：标签图标丢失、内置离线备用图标、彻底解决拖拽空气墙 Bug
 -- ==============================================================
 local CoreGui = game:GetService("CoreGui")
 local OrionLib = (function()
@@ -28,7 +28,6 @@ local OrionLib = (function()
     local Icons = {}
     local Success, Response = pcall(function() Icons = HttpService:JSONDecode(game:HttpGetAsync("https://raw.githubusercontent.com/evoincorp/lucideblox/master/src/modules/util/icons.json")).icons end)
     
-    -- 强力内置备用图标库
     local FallbackIcons = {
         home           = "rbxassetid://7733955511",
         eye            = "rbxassetid://7733960981",
@@ -82,7 +81,7 @@ local OrionLib = (function()
     
     local LastDragEnd = 0
     
-    -- ★ 修复空气墙的核心拖拽函数
+    -- ★ 核心修复：极度自由的拖拽函数
     local function MakeDraggable(DragPoint, Main)
         pcall(function()
             local Dragging, MousePos, FramePos = false, nil, nil
@@ -104,18 +103,24 @@ local OrionLib = (function()
                     local RawX = FramePos.X.Scale * ViewportSize.X + FramePos.X.Offset + Delta.X
                     local RawY = FramePos.Y.Scale * ViewportSize.Y + FramePos.Y.Offset + Delta.Y
                     
-                    local Size, Anchor = Main.AbsoluteSize, Main.AnchorPoint
+                    local Size = Main.AbsoluteSize
                     
-                    -- 重新计算边界，允许向上突破屏幕（留出 30 像素防丢失）
-                    local MinX = -(Size.X * Anchor.X) + 30
-                    local MaxX = ViewportSize.X - (Size.X * (1 - Anchor.X)) - 30
-                    local MinY = -(Size.Y * Anchor.Y) + 30
-                    local MaxY = ViewportSize.Y - (Size.Y * (1 - Anchor.Y)) - 30
+                    -- 允许极端突破限制：
+                    -- 水平：左右最多拖出屏幕，只要保留 50 像素在内
+                    -- 垂直：上下最多拖出屏幕，只要保留 20 像素在内
+                    local MinX = -(Size.X - 50)
+                    local MaxX = ViewportSize.X - 50
+                    local MinY = -(Size.Y - 20)
+                    local MaxY = ViewportSize.Y - 20
                     
-                    -- 防止因缩放或极小屏幕导致 Min 大于 Max 卡死
-                    if MinX > MaxX then MinX = MaxX end
-                    if MinY > MaxY then MinY = MaxY end
-                    
+                    -- 防呆防卡死保护
+                    if MinX > 0 then MinX = 0 end
+                    if MaxX < ViewportSize.X then MaxX = ViewportSize.X end
+                    if MinY > 0 then MinY = 0 end
+                    if MaxY < ViewportSize.Y then MaxY = ViewportSize.Y end
+                    if MinX > MaxX then local t = MinX; MinX = MaxX; MaxX = t end
+                    if MinY > MaxY then local t = MinY; MinY = MaxY; MaxY = t end
+
                     Main.Position = UDim2.new(0, math.clamp(RawX, MinX, MaxX), 0, math.clamp(RawY, MinY, MaxY))
                 end
             end)
@@ -227,7 +232,6 @@ local OrionLib = (function()
         OrionLib.Folder, OrionLib.SaveCfg = WindowConfig.ConfigFolder, WindowConfig.SaveConfig
         if WindowConfig.SaveConfig then if not isfolder(WindowConfig.ConfigFolder) then makefolder(WindowConfig.ConfigFolder) end end
         
-        -- 拖拽条区域
         local DragPoint = SetProps(MakeElement("TFrame"), { Size = UDim2.new(1, 0, 0, 50), Position = UDim2.new(0, 0, 0, 0), ZIndex = 2 })
         
         local TabHolder = AddThemeObject(SetChildren(SetProps(MakeElement("ScrollFrame", Color3.fromRGB(255, 255, 255), 4), { Size = UDim2.new(1, 0, 1, -50) }), { MakeElement("List"), MakeElement("Padding", 8, 0, 0, 8) }), "Divider")
@@ -245,12 +249,10 @@ local OrionLib = (function()
         
         local WindowTopBarLine = AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -1) }), "Stroke")
         
-        -- 初始位置改到偏上方，方便用户
         local MainWindow = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 10), { Parent = Orion, Position = UDim2.new(0.5, -307, 0, 50), Size = UDim2.new(0, 615, 0, 344), ClipsDescendants = true, Active = true, Draggable = false }), { SetChildren(SetProps(MakeElement("TFrame"), { Size = UDim2.new(1, 0, 0, 50), Name = "TopBar" }), { WindowName, WindowSubTitle, WindowTopBarLine, AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 7), { Size = UDim2.new(0, 70, 0, 30), Position = UDim2.new(1, -90, 0, 10) }), { AddThemeObject(MakeElement("Stroke"), "Stroke"), AddThemeObject(SetProps(MakeElement("Frame"), { Size = UDim2.new(0, 1, 1, 0), Position = UDim2.new(0.5, 0, 0, 0) }), "Stroke"), CloseBtn, MinimizeBtn }), "Second") }), DragPoint, WindowStuff }), "Main")
         
         if WindowConfig.ShowIcon then WindowName.Position = UDim2.new(0, 50, 0, -24) local WindowIcon = SetProps(MakeElement("Image", WindowConfig.Icon), { Size = UDim2.new(0, 20, 0, 20), Position = UDim2.new(0, 25, 0, 15) }) WindowIcon.Parent = MainWindow.TopBar end
         
-        -- 应用修复后的拖拽
         MakeDraggable(DragPoint, MainWindow)
         
         local OpenToggleBtn = Create("TextButton", { Name = "OrionOpenToggle", Size = UDim2.new(0, 50, 0, 50), Position = UDim2.new(0, 20, 0.5, -25), BackgroundColor3 = Color3.fromRGB(20, 35, 50), Text = "UI", TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.GothamBold, TextSize = 14, Visible = false, Active = true, Parent = Orion })
