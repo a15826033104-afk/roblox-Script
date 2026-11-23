@@ -1,3 +1,34 @@
+--[[
+================================================================
+ 窗脚本 v4.2.0 · 主线（FluentPlus 底座）
+----------------------------------------------------------------
+ 底座      FluentPlus  Beta.lua（discoart/FluentPlus，明文 11,095 行）
+           启动时读缓存 ChickenBeachChickenTech_Data/fp_cache.luau，
+           缓存校验（ResizeStartSize / 300,2048 / 确定要关闭界面吗？）
+           三项不全则从官方 raw + gh-proxy + ghfast 三镜像重下并打补丁。
+ 库补丁    10 处（纯文本，各命中 1 次）
+           1-5  右下角缩放手柄 36×36、ResizeStartSize 去滚雪球、
+                下限 300×240、InputEnded 不再误触重置
+           6    取色器弹窗按 ViewportSize 夹紧
+           7-10 关闭弹窗汉化（确定要关闭界面吗？/ 关闭 / 是 / 否）
+ 适配层    Window:Tab → AddTab；wrapTab 把 Toggle/Slider/Dropdown/Input/
+           Button/Paragraph/Section 映射到 Add*，130 个控件零改动
+ 本版新增  滑块创建修复（库要求 Rounding，缺失即断言失败，24 个滑块全挂）
+           标题栏两排（14px 粗标题 + 11px 淡署名），按结构重排而非字符串补丁
+           标题栏去图标、搜索框占位汉化为「搜索…」
+ 保留      v3.0.7 的四项工程收益：fitWindow 手机适配、ui_cfg 尺寸记忆、
+           主题体系、速度守护；自有胶囊（Corner=UDim.new(1,0)）
+ 自托管    FP_PRIMARY 填自己仓库里 UI.lua 的 raw 链接即可（优先于镜像，
+           已是补丁版的源不会重复打补丁）；留空则走官方镜像。
+ 上一版    主线 v3.0.7（Fluent Renewed 底座）→ 已移至 分支/ 存档
+================================================================
+]]
+
+-- 探针 ①：注入后控制台应打印这一行。看不到 = 脚本根本没执行（多半是编译/加载失败）
+pcall(function()
+	warn("[窗] v4.2.0 开始执行")
+end)
+
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local LP = Players.LocalPlayer
@@ -101,6 +132,11 @@ end
 
 local bootStart = os.clock()
 local BootPanel = {done = false}
+
+-- 探针 ②：执行到这里说明前面的配置读取全过了，接下来建启动卡
+pcall(function()
+	warn("[窗] 进入启动卡")
+end)
 
 do
 	local parent = LP:FindFirstChild("PlayerGui")
@@ -268,11 +304,23 @@ local FP_PIN = {
 	Marker = "FluentPlus",
 }
 
+-- 自托管优先：把已打好 10 处补丁的 UI.lua 放进你自己的仓库，
+-- 这里填 raw 链接即可彻底摆脱上游文案变动（留空则只用下面的官方镜像）
+local FP_PRIMARY = ""
+
 local FP_MIRRORS = {
 	"https://raw.githubusercontent.com/discoart/FluentPlus/refs/heads/main/Beta.lua",
 	"https://gh-proxy.com/https://raw.githubusercontent.com/discoart/FluentPlus/refs/heads/main/Beta.lua",
 	"https://ghfast.top/https://raw.githubusercontent.com/discoart/FluentPlus/refs/heads/main/Beta.lua",
 }
+
+local FP_SOURCES = {}
+if FP_PRIMARY ~= "" then
+	table.insert(FP_SOURCES, FP_PRIMARY)
+end
+for _, u in ipairs(FP_MIRRORS) do
+	table.insert(FP_SOURCES, u)
+end
 
 if type(isfolder) == "function" and type(makefolder) == "function" then
 	pcall(function()
@@ -359,12 +407,16 @@ end
 -- 2) 缓存不可用才下载
 if not Fluent then
 	local log = {}
-	for _, url in ipairs(FP_MIRRORS) do
+	for _, url in ipairs(FP_SOURCES) do
 		local ok, body = pcall(function()
 			return game:HttpGet(url, true)
 		end)
 		if ok and type(body) == "string" and #body > 200000 then
-			local patched, hits = fpPatch(body)
+			-- 源文件如果本来就是补丁版（自托管的情况），不再重复打补丁
+			local patched, hits = body, 10
+			if not fpCacheOk(body) then
+				patched, hits = fpPatch(body)
+			end
 			if hits < 10 then
 				log[#log + 1] = "补丁命中 " .. tostring(hits) .. "/6"
 			end
@@ -470,8 +522,10 @@ do
 		for _, d in ipairs(ch:GetDescendants()) do
 			if
 				(d.Name == "ChuangTrail" and d:IsA("Trail"))
+				or d.Name == "ChuangFlyAtt"
 				or d.Name == "ChuangFlyVel"
-				or d.Name == "ChuangFlyGyro"
+				or d.Name == "ChuangFlyOrient"
+				or d.Name == "ChuangFlyForce"
 				or d.Name == "EpixVel"
 			then
 				pcall(function()
@@ -508,7 +562,13 @@ do
 
 		pcall(function()
 			for _, obj in ipairs(ch:GetChildren()) do
-				if obj:IsA("BodyVelocity") or obj:IsA("BodyGyro") then
+				if
+					obj:IsA("BodyVelocity")
+					or obj:IsA("BodyGyro")
+					or obj:IsA("LinearVelocity")
+					or obj:IsA("AlignOrientation")
+					or obj:IsA("VectorForce")
+				then
 					obj:Destroy()
 				end
 			end
@@ -572,7 +632,7 @@ local function spawnTracked(fn)
 end
 
 local Patch = {}
-Patch.Version = "3.0.7"
+Patch.Version = "4.2.0"
 Patch.Config = {
 	PillText = "打开界面",
 	PillWidth = 196,
@@ -590,7 +650,20 @@ Patch.Config = {
 	PillBreathe = true,
 	PillSpring = true,
 	TranslateThrottle = 2,
+	-- 原生外观：开=完全不碰几何与字号（圆角/滚动条/标题栏两排/搜索图标位置全跳过），
+	-- 用于随时验证「我们没把设计焊死」。改完重开界面生效。
+	NativeLook = (tonumber(UICfg.native) or 0) == 1,
+	-- 窗口外柔光阴影（2.9 的设计，FluentPlus 原生没有），默认开
+	WindowShadow = (tonumber(UICfg.winshadow) or 1) == 1,
+	-- 极限模式：抹掉窗口/胶囊阴影 + 停掉胶囊全部循环补间，最省帧
+	Lite = (tonumber(UICfg.lite) or 0) == 1,
 }
+
+-- 极限模式存过盘就开机直接生效，不然要等用户再点一次开关
+if Patch.Config.Lite then
+	Patch.Config.PillBreathe = false
+	Patch.Config.PillSpring = false
+end
 
 local attached = {}
 local lastWindow
@@ -1136,6 +1209,9 @@ local function buildPill(parent, onTap)
 	rippleCorner.Parent = ripple
 
 	local function playRipple()
+		if Patch.Config.Lite then
+			return
+		end
 		ripple.Size = UDim2.fromOffset(math.floor(h * 0.85), math.floor(h * 0.85))
 		ripple.BackgroundTransparency = 0.72
 		tween(ripple, {Size = UDim2.fromOffset(math.floor(w * 1.15), math.floor(h * 2.1))}, 0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
@@ -1233,6 +1309,7 @@ local function buildPill(parent, onTap)
 		if shadow and shadow.Parent then
 			shadow.Position = UDim2.fromOffset(px - 7, py - 6)
 			shadow.Size = UDim2.fromOffset(math.floor(pill.AbsoluteSize.X) + 14, math.floor(pill.AbsoluteSize.Y) + 14)
+			shadow.Visible = pill.Visible and not Patch.Config.Lite
 		end
 	end
 
@@ -2176,8 +2253,68 @@ function API.Freeze(on)
 end
 
 --============================ 飞行 ============================--
+-- 内核：LinearVelocity + AlignOrientation + VectorForce（现代约束）
+-- 旧的 BodyVelocity / BodyGyro 已整段移除，原因：
+--   BodyMover 是遗留件，属性会复制到服务端，带速度检测的游戏更容易判定；
+--   BodyGyro 锁 R15 朝向有抖动，且 P 值要手工调。
+-- 现在三件套各管一件事：
+--   LinearVelocity   管速度（World 空间，每帧改写 VectorVelocity）
+--   AlignOrientation 管朝向（单附件 + RigidityEnabled，瞬间对齐不抖）
+--   VectorForce      抵消重力（按 AssemblyMass × Gravity 算，悬停不垂头）
+-- 仍然要每帧把 Humanoid 打进 Physics 状态，否则它自己的落地位移会抢控制权。
 
-local flyBV, flyBG
+local flyLV, flyAO, flyVF, flyAtt
+
+local FLY_DESCEND_CAP = 20
+
+local function flyCleanup()
+	-- 先夹下落速度再拆约束：直接 Destroy 会把当前的高速垂直速度留在身上，
+	-- 自然灾害类游戏会把它判成高速摔落，关飞行的那一下照样掉血。
+	local rootNow = getRoot()
+	if rootNow then
+		-- 两步走：先把下落分量夹到 20，再整体清零并保持 0.24 秒。
+		-- 只夹不零还是会以 20 的速度撞地（有些游戏的判定阈值比 20 还低）；
+		-- 清零后保持一小段时间，落地那一下碰撞速度接近 0，摔伤判定拿不到数。
+		pcall(function()
+			local v = rootNow.AssemblyLinearVelocity
+			rootNow.AssemblyLinearVelocity = Vector3.new(v.X, math.min(v.Y, FLY_DESCEND_CAP), v.Z)
+		end)
+		pcall(function()
+			if rootNow.Parent then
+				for _ = 1, 8 do
+					rootNow.AssemblyLinearVelocity = Vector3.zero
+					rootNow.AssemblyAngularVelocity = Vector3.zero
+					task.wait(0.03)
+				end
+			end
+		end)
+	end
+
+	for _, obj in ipairs({ flyLV, flyAO, flyVF, flyAtt }) do
+		if obj then
+			pcall(function()
+				obj:Destroy()
+			end)
+		end
+	end
+	flyLV, flyAO, flyVF, flyAtt = nil, nil, nil, nil
+
+	local root = getRoot()
+	if root then
+		pcall(function()
+			for _, d in ipairs(root:GetChildren()) do
+				if
+					d.Name == "ChuangFlyAtt"
+					or d.Name == "ChuangFlyVel"
+					or d.Name == "ChuangFlyOrient"
+					or d.Name == "ChuangFlyForce"
+				then
+					d:Destroy()
+				end
+			end
+		end)
+	end
+end
 
 function API.SetFlySpeed(v)
 	state.flySpeed = math.clamp(tonumber(v) or 100, 5, 1000)
@@ -2190,65 +2327,94 @@ function API.Fly(on)
 		return state.fly
 	end
 
-	if on then
-		local ch = getChar()
-		local root = ch:WaitForChild("HumanoidRootPart")
-		local hum = ch:WaitForChild("Humanoid")
-
-		flyBV = Instance.new("BodyVelocity")
-		flyBV.Name = "ChuangFlyVel"
-		flyBV.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-		flyBV.Parent = root
-
-		flyBG = Instance.new("BodyGyro")
-		flyBG.Name = "ChuangFlyGyro"
-		flyBG.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-		flyBG.P = 8000
-		flyBG.Parent = root
-
-		local controls
-		pcall(function()
-			controls = require(LP.PlayerScripts:WaitForChild("PlayerModule")):GetControls()
-		end)
-
-		state.fly = true
-
-		spawnTracked(function()
-			while state.fly and root.Parent do
-				local cam = Workspace.CurrentCamera
-				local move = controls and controls:GetMoveVector() or Vector3.zero
-				local dir = cam.CFrame.LookVector * -move.Z + cam.CFrame.RightVector * move.X
-
-				flyBV.Velocity = move.Magnitude > 0 and dir.Unit * state.flySpeed or Vector3.new(0, 0.1, 0)
-				flyBG.CFrame = CFrame.new(
-					Vector3.zero,
-					move.Magnitude > 0 and dir or Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
-				)
-
-				hum:ChangeState(Enum.HumanoidStateType.Physics)
-				RunService.RenderStepped:Wait()
-			end
-
-			if flyBV then
-				flyBV:Destroy()
-				flyBV = nil
-			end
-			if flyBG then
-				flyBG:Destroy()
-				flyBG = nil
-			end
-		end)
-	else
+	if not on then
 		state.fly = false
-		if flyBV then
-			flyBV:Destroy()
-			flyBV = nil
-		end
-		if flyBG then
-			flyBG:Destroy()
-			flyBG = nil
-		end
+		flyCleanup()
+		return false
 	end
+
+	local ch = getChar()
+	local root = ch:WaitForChild("HumanoidRootPart")
+	local hum = ch:WaitForChild("Humanoid")
+
+	flyAtt = Instance.new("Attachment")
+	flyAtt.Name = "ChuangFlyAtt"
+	flyAtt.Parent = root
+
+	flyLV = Instance.new("LinearVelocity")
+	flyLV.Name = "ChuangFlyVel"
+	flyLV.Attachment0 = flyAtt
+	flyLV.RelativeTo = Enum.ActuatorRelativeTo.World
+	flyLV.ForceLimitMode = Enum.ForceLimitMode.PerAxis
+	flyLV.MaxAxesForce = Vector3.new(1e6, 1e6, 1e6)
+	flyLV.VectorVelocity = Vector3.zero
+	flyLV.Parent = root
+
+	flyAO = Instance.new("AlignOrientation")
+	flyAO.Name = "ChuangFlyOrient"
+	flyAO.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	flyAO.Attachment0 = flyAtt
+	flyAO.RigidityEnabled = true
+	flyAO.MaxTorque = 1e6
+	flyAO.Parent = root
+
+	flyVF = Instance.new("VectorForce")
+	flyVF.Name = "ChuangFlyForce"
+	flyVF.Attachment0 = flyAtt
+	flyVF.RelativeTo = Enum.ActuatorRelativeTo.World
+	flyVF.ApplyAtCenterOfMass = true
+	flyVF.Parent = root
+
+	local controls
+	pcall(function()
+		controls = require(LP.PlayerScripts:WaitForChild("PlayerModule")):GetControls()
+	end)
+
+	state.fly = true
+
+	-- 护血：有些游戏按“位移速度”扣血，飞过去也会被算成摔伤/撞击。
+	-- 这里只记录飞行期间的基线，血量被扣就补回基线，不碰 MaxHealth。
+	local flyHealth = hum.Health
+
+	spawnTracked(function()
+		while state.fly and root.Parent do
+			if hum.Health < flyHealth then
+				pcall(function()
+					hum.Health = flyHealth
+				end)
+			else
+				flyHealth = hum.Health
+			end
+
+			local cam = Workspace.CurrentCamera
+			local move = controls and controls:GetMoveVector() or Vector3.zero
+			local dir = cam.CFrame.LookVector * -move.Z + cam.CFrame.RightVector * move.X
+
+			-- 重力抵消：AssemblyMass 是整个装配体的质量，不是单个部件的
+			local mass = 0
+			pcall(function()
+				mass = root.AssemblyMass
+			end)
+			flyVF.Force = Vector3.new(0, mass * Workspace.Gravity, 0)
+
+			if move.Magnitude > 0 then
+				flyLV.VectorVelocity = dir.Unit * state.flySpeed
+				flyAO.CFrame = CFrame.lookAt(Vector3.zero, dir)
+			else
+				flyLV.VectorVelocity = Vector3.new(0, 0.1, 0)
+				local flat = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
+				if flat.Magnitude < 0.001 then
+					flat = Vector3.new(0, 0, -1)
+				end
+				flyAO.CFrame = CFrame.lookAt(Vector3.zero, flat)
+			end
+
+			hum:ChangeState(Enum.HumanoidStateType.Physics)
+			RunService.RenderStepped:Wait()
+		end
+
+		flyCleanup()
+	end)
 
 	return state.fly
 end
@@ -3983,7 +4149,6 @@ local Window = Fluent:CreateWindow({
 	Theme = Patch.Config.Theme or "Light",
 	MinimizeKey = Enum.KeyCode.RightControl,
 	Search = true,
-	Icon = "home",
 })
 
 Gui.Window = Window
@@ -4056,6 +4221,9 @@ local WIN_TITLE = "窗脚本"
 local WIN_SUBTITLE = "依旧培根头"
 
 local function fixTitleBar()
+	if Patch.Config.NativeLook then
+		return false
+	end
 	local bar = Window.TitleBar and Window.TitleBar.Frame
 	if not bar then
 		return false
@@ -4149,14 +4317,122 @@ task.defer(function()
 	pcall(fixTitleBar)
 end)
 
--- 搜索框占位文字改中文（库默认 Search...）
-task.delay(0.6, function()
+--==================== 窗口外柔光阴影（取自 2.9 的设计） ====================--
+-- FluentPlus 没有窗口投影，卡片和游戏场景直接糊在一起、边界发虚；
+-- 2.9 是一张 9-slice 阴影图垫在窗口后面。这里按主题取色：
+--   浅色 蓝灰 (150,158,180) 0.82  —— 纯黑在浅色底上会显脏
+--   深色 纯黑 (0,0,0) 0.45      —— 灰紫在深色卡片边缘会发紫边
+local rootShadow
+local function shadowPalette()
+	if Patch.Config.DarkMode then
+		return Color3.fromRGB(0, 0, 0), 0.45
+	end
+	return Color3.fromRGB(150, 158, 180), 0.82
+end
+
+local function syncRootShadow()
+	if not (rootShadow and rootShadow.Parent) then
+		return
+	end
+	local root = Window.Root
+	if not root then
+		return
+	end
+	local rel = root.AbsolutePosition - rootShadow.Parent.AbsolutePosition
+	local sz = root.AbsoluteSize
+	rootShadow.Position = UDim2.fromOffset(math.floor(rel.X - 10), math.floor(rel.Y - 8))
+	rootShadow.Size = UDim2.fromOffset(math.floor(sz.X + 20), math.floor(sz.Y + 16))
+end
+
+local function applyRootShadow()
+	if not rootShadow then
+		return
+	end
+	local c, t = shadowPalette()
+	rootShadow.ImageColor3 = c
+	rootShadow.ImageTransparency = t
+	rootShadow.Visible = Patch.Config.WindowShadow and not Patch.Config.Lite
+	syncRootShadow()
+end
+
+task.defer(function()
 	pcall(function()
+		if Patch.Config.NativeLook then
+			return
+		end
+		local root = Window.Root
+		rootShadow = Instance.new("ImageLabel")
+		rootShadow.Name = "ChuangRootShadow"
+		rootShadow.BackgroundTransparency = 1
+		rootShadow.Image = "rbxassetid://6014261993"
+		rootShadow.ScaleType = Enum.ScaleType.Slice
+		rootShadow.SliceCenter = Rect.new(49, 49, 450, 450)
+		rootShadow.ZIndex = math.max(0, (root.ZIndex or 1) - 1)
+		rootShadow.Parent = root.Parent
+		applyRootShadow()
+
+		for _, prop in ipairs({ "Position", "Size", "AbsoluteSize" }) do
+			pcall(function()
+				root:GetPropertyChangedSignal(prop):Connect(syncRootShadow)
+			end)
+		end
+		local cam = workspace.CurrentCamera
+		if cam then
+			cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+				task.delay(0.12, syncRootShadow)
+			end)
+		end
+
+		-- 主题切换后重新取色：把 applyTheme 包一层，切完补一次阴影配色
+		local baseApply = Patch.ApplyTheme
+		if type(baseApply) == "function" then
+			Patch.ApplyTheme = function(name)
+				baseApply(name)
+				pcall(applyRootShadow)
+			end
+		end
+	end)
+end)
+
+-- 搜索框：占位汉化 + 放大镜从右边挪到左边
+-- FluentPlus 里图标是 Position = UDim2.new(1, -13, 0.5, 0)、Anchor 0.5 → 死挂在右端，
+-- 而文本框是 (0, 8) / Size 1,-36 左对齐，两边空得不对等。
+-- 这里把图标贴到左端 10px，文本框整体右移，右侧留 10px 对称内边距。
+task.delay(0.6, function()
+	if Patch.Config.NativeLook then
+		return
+	end
+	pcall(function()
+		local box
 		for _, d in ipairs(Window.Root:GetDescendants()) do
 			if d:IsA("TextBox") and d.PlaceholderText == "Search..." then
 				d.PlaceholderText = "搜索…"
+				box = d
 			end
 		end
+		if not box then
+			return
+		end
+
+		local frame = box.Parent
+		local icon
+		if frame then
+			for _, c in ipairs(frame:GetChildren()) do
+				if c:IsA("ImageLabel") then
+					icon = c
+					break
+				end
+			end
+		end
+		if not icon then
+			return
+		end
+
+		icon.AnchorPoint = Vector2.new(0, 0.5)
+		icon.Position = UDim2.new(0, 10, 0.5, 0)
+		box.TextXAlignment = Enum.TextXAlignment.Left
+		box.Position = UDim2.new(0, 32, 0, 0)
+		box.Size = UDim2.new(1, -42, 1, 0)
 	end)
 end)
 
@@ -6921,6 +7197,31 @@ Gui.Controls.ThemeDropdown = AddElement(TabUi, "Dropdown", {
 	end,
 })
 
+AddSection(TabUi, "外观")
+
+Gui.Controls.NativeLookToggle = AddElement(TabUi, "Toggle", {
+	Title = "原生外观",
+	Description = "开：圆角层次、滚动条统一、标题栏两排、搜索图标左置全部跳过，界面回到 FluentPlus 原样。重开界面生效",
+	Default = Patch.Config.NativeLook == true,
+	Callback = function(on)
+		UICfg.native = on and 1 or 0
+		pcall(saveUICfg)
+		notifyState("外观设置已记录，重开界面生效")
+	end,
+})
+
+Gui.Controls.WindowShadowToggle = AddElement(TabUi, "Toggle", {
+	Title = "窗口外阴影",
+	Description = "给卡片垫一层柔光投影，边界更清楚。手机关掉能省一层全窗绘制",
+	Default = Patch.Config.WindowShadow ~= false,
+	Callback = function(on)
+		Patch.Config.WindowShadow = on and true or false
+		UICfg.winshadow = on and 1 or 0
+		pcall(saveUICfg)
+		pcall(applyRootShadow)
+	end,
+})
+
 AddSection(TabUi, "性能")
 
 Gui.Controls.PerfBreatheToggle = AddElement(TabUi, "Toggle", {
@@ -6946,6 +7247,31 @@ Gui.Controls.PerfSpringToggle = AddElement(TabUi, "Toggle", {
 	Default = true,
 	Callback = function(on)
 		Patch.Config.PillSpring = on and true or false
+	end,
+})
+
+Gui.Controls.LiteToggle = AddElement(TabUi, "Toggle", {
+	Title = "极限模式",
+	Description = "抹掉窗口与胶囊阴影、停掉呼吸/弹簧/涟漪，只留静态界面。低端机跑满帧用",
+	Default = Patch.Config.Lite == true,
+	Callback = function(on)
+		Patch.Config.Lite = on and true or false
+		UICfg.lite = on and 1 or 0
+		pcall(saveUICfg)
+		Patch.Config.PillBreathe = not on
+		Patch.Config.PillSpring = not on
+		pcall(function()
+			local pill = pillGui and pillGui:FindFirstChild("FluentMobilePill")
+			if pill and on then
+				stopBreathe(pill)
+			end
+			local sh = pillGui and pillGui:FindFirstChild("FluentMobilePillShadow")
+			if sh then
+				sh.Visible = not on
+			end
+		end)
+		pcall(applyRootShadow)
+		notifyState(on and "极限模式已开：动画与阴影关闭" or "极限模式已关：动画恢复")
 	end,
 })
 
@@ -7019,6 +7345,9 @@ local function unifyScrollbars(root)
 end
 
 local function polishUI()
+	if Patch.Config.NativeLook then
+		return
+	end
 	local root = Window.Root
 	if not root then
 		return
@@ -7035,23 +7364,12 @@ local function polishUI()
 		end
 	end
 
+	-- 标题栏不在这里改：FluentPlus 没有 TitleHolder / tb.Title / tb.SubTitle，
+	-- 这一段是从 Renewed 抄来的残留，在 Plus 里全部走不到，只会让人以为还有第二层控制。
+	-- 标题栏的两排、字号、粗体由 fixTitleBar 单独负责（按结构重排，可跳过、可回退）。
 	local tb = Window.TitleBar
 	if tb then
-		if tb.Title then
-			tb.Title.TextSize = 14
-			tb.Title.Font = Enum.Font.GothamBold
-		end
-		if tb.SubTitle then
-			tb.SubTitle.TextSize = 11
-			tb.SubTitle.TextTransparency = 0.45
-		end
-		local holder = tb.TitleHolder
-		local layout = holder and holder:FindFirstChildOfClass("UIListLayout")
-		if layout then
-			layout.Padding = UDim.new(0, 2)
-			layout.VerticalAlignment = Enum.VerticalAlignment.Center
-		end
-		for _, b in ipairs({tb.MinButton, tb.MaxButton, tb.CloseButton}) do
+		for _, b in ipairs({ tb.MinButton, tb.MaxButton, tb.CloseButton }) do
 			if b and b.Frame then
 				setCorner(b.Frame, 999)
 			end
@@ -7066,6 +7384,9 @@ pcall(polishUI)
 
 -- Fluent 切主题/重建时会重刷自己的属性，主题一变就重新打一次，别让它把我们盖回去
 pcall(function()
+	if not Fluent.ThemeChanged then
+		return
+	end
 	Fluent.ThemeChanged:Connect(function()
 		task.defer(function()
 			pcall(polishUI)
@@ -7100,7 +7421,7 @@ for i = 1, 11 do
 	end
 end
 
-API.Notify("制作脚本(窗)", "已加载 v3.0.7 · Acrylic + 下拉搜索", 5)
+API.Notify("制作脚本(窗)", "已加载 v4.2.0 · FluentPlus · 18 主题", 5)
 pcall(function()
 	BootPanel.Finish()
 end)
