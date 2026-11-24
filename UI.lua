@@ -1,6 +1,3 @@
--- ==============================================================
--- 魔改版 Orion UI 引擎 (BKU特供)
--- 修复：空气墙拖拽、头像乱码、标签图标丢失
 -- 新增：内置紫罗兰主题、动态换肤 API
 -- ==============================================================
 local CoreGui = game:GetService("CoreGui")
@@ -47,30 +44,45 @@ local OrionLib = (function()
         end
     end
 
-    -- ===================== 图标：全部走 Orion 内置表（不再联网拉 icons.json） =====================
-    -- 原来启动时 HttpGetAsync 拉 lucideblox 的 icons.json，弱网/限速会拖慢 UI 出现；
-    -- 这里改成纯内置，8 个 Tab 用到的名字都在表里，未知名字落到齿轮图标。
+    -- ===================== 图标：全部走内置表（官方 lucide 映射，逐个核对过） =====================
+    -- 旧表里的 id 是错位的（home 指向扳手、eye 指向房子、settings 指向蜘蛛网…），
+    -- 而且原来拉的 icons.json 地址已经 404，所以图标一直是错的。这里换成 frappedevs/lucideblox 的官方映射。
     local Icons = {
-        home           = "rbxassetid://7733955511",
-        eye            = "rbxassetid://7733960981",
-        sword          = "rbxassetid://7734068321",
-        activity       = "rbxassetid://7733770149",
-        shield         = "rbxassetid://7734068361",
-        ["refresh-cw"] = "rbxassetid://7734090142",
-        ["file-code"]  = "rbxassetid://7733977987",
-        settings       = "rbxassetid://7734053426",
-        user           = "rbxassetid://7734053494",
-        users          = "rbxassetid://7734053515",
-        star           = "rbxassetid://7734068322",
-        info           = "rbxassetid://7734049806",
-        lock           = "rbxassetid://7734049839",
-        heart          = "rbxassetid://7734030156",
-        zap            = "rbxassetid://7734090142",
-        map            = "rbxassetid://7734049781",
-        trash          = "rbxassetid://7734078494",
-        key            = "rbxassetid://7734049757",
-        skull          = "rbxassetid://7734068338",
-        ["chevron-down"] = "rbxassetid://7072706796",
+        home           = "rbxassetid://7733960981",
+        eye            = "rbxassetid://7733774602",
+        ["eye-off"]    = "rbxassetid://7733774495",
+        activity       = "rbxassetid://7733655755",
+        shield         = "rbxassetid://7734056608",
+        ["refresh-cw"] = "rbxassetid://7734051052",
+        ["file-code"]  = "rbxassetid://7733779730",
+        settings       = "rbxassetid://7734053495",
+        user           = "rbxassetid://7743875962",
+        users          = "rbxassetid://7743876054",
+        star           = "rbxassetid://7734068321",
+        info           = "rbxassetid://7733964719",
+        lock           = "rbxassetid://7733992528",
+        heart          = "rbxassetid://7733956134",
+        map            = "rbxassetid://7733992829",
+        ["trash-2"]    = "rbxassetid://7743873772",
+        trash          = "rbxassetid://7743873772",
+        key            = "rbxassetid://7733965118",
+        skull          = "rbxassetid://7734058599",
+        ["chevron-down"] = "rbxassetid://7733717447",
+        crosshair      = "rbxassetid://7733765307",
+        target         = "rbxassetid://7743872758",
+        axe            = "rbxassetid://7733674079",
+        sliders        = "rbxassetid://7734058803",
+        move           = "rbxassetid://7743870731",
+        package        = "rbxassetid://7734021469",
+        download       = "rbxassetid://7733770755",
+        copy           = "rbxassetid://7733764083",
+        clipboard      = "rbxassetid://7733734762",
+        scan           = "rbxassetid://8997386861",
+        wrench         = "rbxassetid://7743878358",
+        flashlight     = "rbxassetid://7733798851",
+        -- 别名：lucide 最新表里已没有 sword / zap，给它们找个近义图标，免得对应页面空着
+        sword          = "rbxassetid://7733765307",
+        zap            = "rbxassetid://7733798851",
     }
 
     local function GetIcon(IconName)
