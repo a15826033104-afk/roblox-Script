@@ -47,11 +47,10 @@ local OrionLib = (function()
         end
     end
 
-    -- ===================== 图标加载与强力兜底 =====================
-    local Icons = {}
-    local Success, Response = pcall(function() Icons = HttpService:JSONDecode(game:HttpGetAsync("https://raw.githubusercontent.com/evoincorp/lucideblox/master/src/modules/util/icons.json")).icons end)
-    
-    local FallbackIcons = {
+    -- ===================== 图标：全部走 Orion 内置表（不再联网拉 icons.json） =====================
+    -- 原来启动时 HttpGetAsync 拉 lucideblox 的 icons.json，弱网/限速会拖慢 UI 出现；
+    -- 这里改成纯内置，8 个 Tab 用到的名字都在表里，未知名字落到齿轮图标。
+    local Icons = {
         home           = "rbxassetid://7733955511",
         eye            = "rbxassetid://7733960981",
         sword          = "rbxassetid://7734068321",
@@ -70,17 +69,21 @@ local OrionLib = (function()
         map            = "rbxassetid://7734049781",
         trash          = "rbxassetid://7734078494",
         key            = "rbxassetid://7734049757",
-        skull          = "rbxassetid://7734068338"
+        skull          = "rbxassetid://7734068338",
+        ["chevron-down"] = "rbxassetid://7072706796",
     }
 
     local function GetIcon(IconName)
-        if type(IconName) ~= "string" then return "" end
-        if Icons[IconName] ~= nil then return Icons[IconName] end
-        if FallbackIcons[IconName] ~= nil then return FallbackIcons[IconName] end
-        if IconName:find("rbxassetid://") or IconName:find("rbxthumb://") or IconName:find("http") then 
-            return IconName 
+        if type(IconName) ~= "string" then
+            return Icons.settings
         end
-        return "rbxassetid://7734053426"
+        if Icons[IconName] ~= nil then
+            return Icons[IconName]
+        end
+        if IconName:find("rbxassetid://") or IconName:find("rbxthumb://") or IconName:find("http") then
+            return IconName
+        end
+        return Icons.settings
     end
 
     local Orion = Instance.new("ScreenGui") 
